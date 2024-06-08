@@ -49,3 +49,19 @@ size_t Tensor::num_elem() {
   for (size_t i = 0; i < ndim; i++) { size *= shape[i]; }
   return size;
 }
+
+Tensor* Tensor::cpu() {
+  // Check if the tensor is already on the CPU
+  if (device == -1) {
+    printf("Tensor is already on the CPU\n");
+    return this;
+  }
+
+  // Create a CPU tensor with the same shape
+  Tensor* cpu_tensor = new Tensor(vector<size_t>(shape, shape + ndim), -1);
+
+  // Copy data from GPU to CPU
+  cudaMemcpy(cpu_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyDeviceToHost);
+
+  return cpu_tensor;
+}
