@@ -325,7 +325,8 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         matmul(embd_a, wte_transposed_a, logit_a);
 
         /* Greedy sampling (only last timestep is considered) */
-        int next_token_id = top1_sampling(logit_a);
+        Tensor* logit_a_ = logit_a->cpu();
+        int next_token_id = top1_sampling(logit_a_);
 
         /* Update input prompt and prompt size (GPU->CPU) */
         input_prompt.push_back(next_token_id);
