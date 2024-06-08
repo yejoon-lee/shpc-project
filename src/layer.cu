@@ -144,23 +144,25 @@ void softmax(Tensor *inout) {
  */
 // CUDA Kernel for layer normalization
 __global__ void layer_norm_kernel(float *inout, float *gamma, float *beta, size_t s, size_t H) {
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (i < s && j < H) {
+    if (i < s){
         float eps = 1e-5;
         float mean = 0;
         float var = 0;
 
-        for (int k = 0; k < H; k++) {
-            mean += inout[i * H + k];
-            var += inout[i * H + k] * inout[i * H + k];
+        for (size_t j = 0; j < H; j++) {
+            mean += inout[i * H + j];
+            var += inout[i * H + j] * inout[i * H + j];
         }
 
         mean /= H;
         var = var / H - mean * mean;
 
-        inout[i * H + j] = (inout[i * H + j] - mean) * (1.0 / sqrt(var + eps)) * gamma[j] + beta[j];
+        for (size_t j = 0; j < H; j++) {
+            inout[i * H + j] = (inout[i * H + j] - mean) * 
+            (1.0 / sqrt(var + eps)) * gamma[j] + beta[j];
+        }
     }
 }
 
@@ -169,12 +171,13 @@ void layer_norm(Tensor *inout, Tensor *gamma, Tensor *beta) {
   size_t s = inout->shape[0];
   size_t H = inout->shape[1];
 
-  // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(H, blockDim.x), DIV_CEIL(s, blockDim.y));
+    // Define grid and block dimensions
+    dim3 blockDim(256);
+    dim3 gridDim(DIV_CEIL(s, blockDim.x));
 
-  // Launch the kernel
-  layer_norm_kernel<<<gridDim, blockDim>>>(inout->buf, gamma->buf, beta->buf, s, H);
+    // Launch the kernel
+    layer_norm_kernel<<<gridDim, blockDim>>>(inout->buf, gamma->buf, beta->buf, s, H);
+
 }
 
 /* Linear
