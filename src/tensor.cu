@@ -65,3 +65,19 @@ Tensor* Tensor::cpu() {
 
   return cpu_tensor;
 }
+
+Tensor* Tensor::set_device(int device) {
+  // Check if the tensor is already on the device
+  if (this->device >= 0) {
+    printf("Tensor is already on one of the devices\n");
+    return this;
+  }
+
+  // Create a tensor on the device
+  Tensor* device_tensor = new Tensor(vector<size_t>(shape, shape + ndim), device);
+
+  // Copy data from CPU to device
+  cudaMemcpy(device_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyHostToDevice);
+
+  return device_tensor;
+}

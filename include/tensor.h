@@ -16,7 +16,9 @@ struct Tensor {
   ~Tensor();
 
   size_t num_elem();
+  
   Tensor* cpu();
+  Tensor* set_device(int device);
 };
 
 typedef Tensor Parameter;
