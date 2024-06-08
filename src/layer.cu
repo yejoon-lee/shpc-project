@@ -160,8 +160,8 @@ __global__ void linear_kernel(float *in, float *w, float *b, float *out, size_t 
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
     if (i < M && j < N) {
-        float sum = 0.0;
-        for (int k = 0; k < K; k++) {
+        double sum = 0.0;
+        for (size_t k = 0; k < K; k++) {
             sum += in[i * K + k] * w[k * N + j];
         }
         out[i * N + j] = sum + b[j];
