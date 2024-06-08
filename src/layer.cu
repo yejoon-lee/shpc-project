@@ -1,5 +1,10 @@
 #include "layer.h"
 
+#include <cuda_runtime.h>
+#include <mpi.h>
+
+#define DIV_CEIL(a, b) (((a) + (b)-1) / (b))
+
 /* Token + Positional Embedding
  * @param [in1]  in: [s]
  * @param [in2] wte: [NUM_VOCAB, H]
@@ -134,6 +139,34 @@ void matmul(Tensor *in1, Tensor *in2, Tensor *out) {
       }
     }
   }
+}
+
+// CUDA Kernel for matmul
+__global__ void matmul_kernel(float *in1, float *in2, float *out, size_t M, size_t K, size_t N) {
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i < M && j < N) {
+        float sum = 0.0;
+        for (int k = 0; k < K; k++) {
+            sum += in1[i * K + k] * in2[k * N + j];
+        }
+        out[i * N + j] = sum;
+    }
+}
+
+// Matmul using CUDA
+void matmul_cuda(Tensor *in1, Tensor *in2, Tensor *out) {
+  size_t M = in1->shape[0];
+  size_t K = in1->shape[1];
+  size_t N = in2->shape[1];
+
+  // Define grid and block dimensions
+  dim3 blockDim(16, 16);
+  dim3 gridDim(DIV_CEIL(N, blockDim.x), DIV_CEIL(M, blockDim.y));
+
+  // Launch the kernel
+  matmul_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, M, K, N);
 }
 
 /* Transpose
