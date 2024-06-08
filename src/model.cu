@@ -170,23 +170,23 @@ void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
   /* Get Attention score by q @ k */
   transpose(k, k_transposed_a);
   matmul(q, k_transposed_a, attn_score_a);
-  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
+  printf("qk attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Scaling */
   scaling(attn_score_a, (1.0 / sqrt(k->shape[1])));
-  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
+  printf("scaled attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Masking */
   add(attn_score_a, mask);
-  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
+  printf("masked attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Softmax */
   softmax(attn_score_a);
-  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
+  printf("softmaxed attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Attention score @ v */
   matmul(attn_score_a, v, out);
-  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
+  printf("v-multiplied attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 }
 
 /* (Masked) Multi-Head Self Attention
