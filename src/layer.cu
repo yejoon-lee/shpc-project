@@ -411,14 +411,14 @@ void split_head(Tensor *in, size_t n_head, Tensor *out) {
  * 'n_head' is the number of heads.
  */
 // CUDA Kernel for extract_qkv
-__global__ void extract_qkv_kernel(float *in, size_t head_idx, size_t n_head, Tensor *q, Tensor *k, Tensor *v, size_t s, size_t H_) {
+__global__ void extract_qkv_kernel(float *in, size_t head_idx, size_t n_head, float *q, float *k, float *v, size_t s, size_t H_) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (i < s && j < H_) {
-        q->buf[i * H_ + j] = in[0 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
-        k->buf[i * H_ + j] = in[1 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
-        v->buf[i * H_ + j] = in[2 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+        q[i * H_ + j] = in[0 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+        k[i * H_ + j] = in[1 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+        v[i * H_ + j] = in[2 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
     }   
 }
 
@@ -432,7 +432,7 @@ void extract_qkv(Tensor *in, size_t head_idx, size_t n_head, Tensor *q, Tensor *
   dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H_, blockDim.y));
 
   // Launch the kernel
-  extract_qkv_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, q, k, v, s, H_);
+  extract_qkv_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, q->buf, k->buf, v->buf, s, H_);
 }
 
 /* Merge each heads
