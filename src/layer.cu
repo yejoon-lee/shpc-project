@@ -1,3 +1,5 @@
+// Invalid but no-error CUDA code
+
 #include "layer.h"
 
 #include <cuda_runtime.h>
