@@ -352,18 +352,7 @@ __global__ void add_kernel(float *inout, float *x, size_t N) {
 void add(Tensor *inout, Tensor *x) {
   size_t N = inout->num_elem();
 
-  float *d_inout;
-  float *d_x;
-
-  cudaMalloc(&d_inout, N * sizeof(float));
-  cudaMalloc(&d_x, N * sizeof(float));
-
-  cudaMemcpy(d_inout, inout->buf, N * sizeof(float), cudaMemcpyHostToDevice);
-  cudaMemcpy(d_x, x->buf, N * sizeof(float), cudaMemcpyHostToDevice);
-
-  add_kernel<<<(N + 255) / 256, 256>>>(d_inout, d_x, N);
-
-  cudaMemcpy(inout->buf, d_inout, N * sizeof(float), cudaMemcpyDeviceToHost);
+  add_kernel<<<(N + 255) / 256, 256>>>(inout->buf, x->buf, N);
 }
 
 /* Split into QKV
