@@ -303,7 +303,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Initialize activations */
         alloc_activations(prompt_size);
 
-        /* Token + Positional Embedding */
+        /* Token + Positional Embedding (CPU->GPU)*/
         token_pos_embedding(input_prompt, wte, wpe, embd_a);
 
         /* Forward path of Transformer blocks */
@@ -327,7 +327,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Greedy sampling (only last timestep is considered) */
         int next_token_id = top1_sampling(logit_a);
 
-        /* Update input prompt and prompt size */
+        /* Update input prompt and prompt size (GPU->CPU) */
         input_prompt.push_back(next_token_id);
         prompt_size += 1;
 
