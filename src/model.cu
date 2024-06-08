@@ -306,7 +306,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a);
         // print first element of embd_a
-        if (p == 0 && t == 0) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
+        if (p == 0 && t <= 1) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
 
         /* Forward path of Transformer blocks */
         for (size_t l = 0; l < NUM_LAYER; l++) {
@@ -315,18 +315,18 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
                             mlp1_b[l], mlp1_w[l], mlp2_b[l], mlp2_w[l],
                             transformer_block_a);
           // print first element of transformer_block_a
-          if (p == 0 && t ==0 & l == 0) printf("transformer_block_a: %f\n", transformer_block_a->cpu()->buf[0]);
+          if (p == 0 && t <= 1 & l == 0) printf("transformer_block_a: %f\n", transformer_block_a->cpu()->buf[0]);
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
           // print first element of embd_a
-          if (p == 0 & t ==0 & l == 0) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
+          if (p == 0 & t <= 1 & l == 0) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
         }
 
         /* Final Layer Normalization */
         layer_norm(embd_a, ln_f_g, ln_f_b);
         // print first element of embd_a
-        if (p == 0 && t == 0) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
+        if (p == 0 && t <= 1) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
 
         /* Projection to vocab. dimension */
         transpose(wte, wte_transposed_a);
@@ -335,10 +335,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Greedy sampling (only last timestep is considered) */
         Tensor* logit_a_ = logit_a->cpu();
         int next_token_id = top1_sampling(logit_a_);
+        delete logit_a_;
 
         /* Update input prompt and prompt size (GPU->CPU) */
         input_prompt.push_back(next_token_id);
         prompt_size += 1;
+        if (p == 0 && t <= 1) printf("next_token_id: %d\n", next_token_id);
 
         /* Store generated token to output */
         output[p * n_token + t] = next_token_id;
