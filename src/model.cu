@@ -303,7 +303,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Initialize activations */
         alloc_activations(prompt_size);
 
-        /* Token + Positional Embedding (CPU->GPU)*/
+        /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a);
 
         /* Forward path of Transformer blocks */
