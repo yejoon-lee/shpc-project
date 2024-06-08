@@ -77,9 +77,6 @@ void free_parameters() {
   delete wte;
 }
 
-// Host activations
-Activation *logit_a_host;
-
 Activation *embd_a, *ffn_proj_a;
 Activation *mha_qkv_proj_a, *mha_out_a, *mha_split_qkv_a, *mha_split_head_a,
     *mha_mask_a, *mha_merge_head_a, *mha_q_a, *mha_k_a, *mha_v_a,
@@ -89,10 +86,6 @@ Activation *wte_transposed_a, *residual_a, *logit_a;
 Activation *transformer_block_a;
 
 void alloc_activations(size_t prompt_size) {
-  // Host activations
-  logit_a_host = new Activation({prompt_size, NUM_VOCAB}, -1);
-
-  // Device activations
   embd_a = new Activation({prompt_size, HIDDEN_DIM});
 
   ffn_proj_a = new Activation({prompt_size, 4 * HIDDEN_DIM});
@@ -122,10 +115,6 @@ void alloc_activations(size_t prompt_size) {
 }
 
 void free_activations() {
-  // Host activations
-  delete logit_a_host;
-
-  // Device activations
   delete embd_a;
   delete ffn_proj_a;
   delete mha_qkv_proj_a;
@@ -314,7 +303,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Initialize activations */
         alloc_activations(prompt_size);
 
-        /* Token + Positional Embedding */
+        /* Token + Positional Embedding (CPU->GPU)*/
         token_pos_embedding(input_prompt, wte, wpe, embd_a);
 
         /* Forward path of Transformer blocks */
@@ -335,13 +324,10 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         transpose(wte, wte_transposed_a);
         matmul(embd_a, wte_transposed_a, logit_a);
 
-        /* GPU -> CPU */
-        logit_a_host = logit_a->cpu();
-
         /* Greedy sampling (only last timestep is considered) */
-        int next_token_id = top1_sampling(logit_a_host);
+        int next_token_id = top1_sampling(logit_a);
 
-        /* Update input prompt and prompt size */
+        /* Update input prompt and prompt size (GPU->CPU) */
         input_prompt.push_back(next_token_id);
         prompt_size += 1;
 
