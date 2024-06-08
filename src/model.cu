@@ -290,8 +290,8 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
-    for (size_t p = 0; p < n_prompt; p++) {
-      int prompt_size = tokens_per_prompt;
+    for (size_t p = 0; p < n_prompt; p++) { // TODO: batching
+      int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
       vector<int> input_prompt(prompt_size);
