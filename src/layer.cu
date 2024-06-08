@@ -71,39 +71,68 @@ void gelu(Tensor *inout) {
  * 's' is the number of tokens in the prompt.
  * 'H' is the hidden dimension.
  */
-// CUDA Kernel for softmax
 __global__ void softmax_kernel(float *inout, size_t s, size_t H) {
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    // Calculate the thread indices
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (i < s && j < H) {
-        float max_val = inout[i * H];
-        for (int k = 0; k < H; k++) {
-            if (inout[i * H + k] > max_val) { max_val = inout[i * H + k]; }
+    if (row < s) {
+        extern __shared__ float shared_mem[];
+
+        // Load the row into shared memory
+        float max_val = -INFINITY;
+        for (int col = threadIdx.x; col < H; col += blockDim.x) {
+            shared_mem[threadIdx.x] = inout[row * H + col];
+            __syncthreads();
+
+            // Find the maximum value in the row
+            for (int k = 0; k < blockDim.x; k++) {
+                if (shared_mem[k] > max_val) {
+                    max_val = shared_mem[k];
+                }
+            }
+            __syncthreads();
         }
 
+        // Calculate the exponentials and sum them
         float sum = 0;
-        for (int k = 0; k < H; k++) {
-            inout[i * H + k] = exp(inout[i * H + k] - max_val);
-            sum += inout[i * H + k];
+        for (int col = threadIdx.x; col < H; col += blockDim.x) {
+            shared_mem[threadIdx.x] = exp(inout[row * H + col] - max_val);
+            __syncthreads();
+
+            // Compute the sum of the exponentials
+            for (int k = 0; k < blockDim.x; k++) {
+                sum += shared_mem[k];
+            }
+            __syncthreads();
         }
 
-        for (int k = 0; k < H; k++) { inout[i * H + k] /= sum; }
+        // Normalize the values
+        for (int col = threadIdx.x; col < H; col += blockDim.x) {
+            inout[row * H + col] = shared_mem[threadIdx.x] / sum;
+            __syncthreads();
+        }
     }
 }
 
-// Softmax using CUDA
 void softmax(Tensor *inout) {
-  size_t s = inout->shape[0];
-  size_t H = inout->shape[1];
+    size_t s = inout->shape[0];
+    size_t H = inout->shape[1];
 
-  // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(H, blockDim.x), DIV_CEIL(s, blockDim.y));
+    // Define grid and block dimensions
+    dim3 blockDim(256); // Use 256 threads per block for better performance
+    dim3 gridDim(1, s);
 
-  // Launch the kernel
-  softmax_kernel<<<gridDim, blockDim>>>(inout->buf, s, H);
+    // Launch the kernel
+    size_t shared_memory_size = blockDim.x * sizeof(float);
+    softmax_kernel<<<gridDim, blockDim, shared_memory_size>>>(inout->buf, s, H);
+
+    // Check for CUDA errors
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        printf("CUDA Error: %s\n", cudaGetErrorString(err));
+    }
 }
+
 
 
 /* Layer Normalization
