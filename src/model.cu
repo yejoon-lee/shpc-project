@@ -198,16 +198,19 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [seq_len, HIDDEN_DIM] ->
     [seq_len, 3*HIDDEN_DIM] */
   linear(in, attn_w, attn_b, mha_qkv_proj_a);
+  printf("mha_qkv_proj_a: %f\n", mha_qkv_proj_a->cpu()->buf[0]);
 
   /* Split into Q, K, V:
     [seq_len, 3*HIDDEN_DIM] ->
     [3, seq_len, HIDDEN_DIM] */
   split_qkv(mha_qkv_proj_a, mha_split_qkv_a);
+  printf("mha_split_qkv_a: %f\n", mha_split_qkv_a->cpu()->buf[0]);
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
+  printf("mha_split_head_a: %f\n", mha_split_head_a->cpu()->buf[0]);
 
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);
@@ -218,20 +221,24 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
   for (size_t idx = 0; idx < NUM_HEAD; idx++) {
     /* Extract Q, K, V from qkv_head */
     extract_qkv(mha_split_head_a, idx, NUM_HEAD, mha_q_a, mha_k_a, mha_v_a);
+    if (idx == 0) printf("mha_q_a: %f\n", mha_q_a->cpu()->buf[0]);
 
     /* Attention */
     attention(mha_q_a, mha_k_a, mha_v_a, mha_mask_a, mha_attn_out_a);
+    if (idx == 0) printf("mha_attn_out_a: %f\n", mha_attn_out_a->cpu()->buf[0]);
 
     /* Merge each head's attn output
       [seq_len, HIDDEN_DIM/NUM_HEAD] ->
       [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
     merge_head(mha_attn_out_a, idx, NUM_HEAD, mha_merge_head_a);
+    if (idx == 0) printf("mha_merge_head_a: %f\n", mha_merge_head_a->cpu()->buf[0]);
   }
 
   /* Concat each heads:
     [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] ->
     [seq_len, HIDDEN_DIM] */
   concat_head(mha_merge_head_a, mha_concat_head_a);
+  printf("mha_concat_head_a: %f\n", mha_concat_head_a->cpu()->buf[0]);
 
   /* OUT projection:
     [seq_len, HIDDEN_DIM] -> [seq_len, HIDDEN_DIM] */
@@ -267,6 +274,7 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
+  printf("mha_out_a: %f\n", mha_out_a->cpu()->buf[0]);
 
   /* Add Residual */
   add(mha_out_a, residual_a);
@@ -279,6 +287,7 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* Position-wise Feed-Forward Network */
   ffn(mha_out_a, mlp1_w, mlp1_b, mlp2_w, mlp2_b, out);
+  printf("ffn_out: %f\n", out->cpu()->buf[0]);
 
   /* Add Residual */
   add(out, residual_a);
@@ -315,12 +324,10 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
                             mlp1_b[l], mlp1_w[l], mlp2_b[l], mlp2_w[l],
                             transformer_block_a);
           // print first element of transformer_block_a
-          if (p == 0 && t <= 1 & l == 0) printf("transformer_block_a: %f\n", transformer_block_a->cpu()->buf[0]);
+          if (p == 0 && t <= 1) printf("============transformer_block_a: %f\n=================", transformer_block_a->cpu()->buf[0]);
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
-          // print first element of embd_a
-          if (p == 0 & t <= 1 & l == 0) printf("embd_a: %f\n", embd_a->cpu()->buf[0]);
         }
 
         /* Final Layer Normalization */
@@ -340,7 +347,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Update input prompt and prompt size (GPU->CPU) */
         input_prompt.push_back(next_token_id);
         prompt_size += 1;
-        if (p == 0 && t <= 1) printf("next_token_id: %d\n", next_token_id);
+        if (p == 0 && t <= 1) printf("\n===============\nnext_token_id: %d\n=============", next_token_id);
 
         /* Store generated token to output */
         output[p * n_token + t] = next_token_id;
