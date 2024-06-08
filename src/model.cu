@@ -170,18 +170,23 @@ void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
   /* Get Attention score by q @ k */
   transpose(k, k_transposed_a);
   matmul(q, k_transposed_a, attn_score_a);
+  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Scaling */
   scaling(attn_score_a, (1.0 / sqrt(k->shape[1])));
+  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Masking */
   add(attn_score_a, mask);
+  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Softmax */
   softmax(attn_score_a);
+  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 
   /* Attention score @ v */
   matmul(attn_score_a, v, out);
+  printf("attn_score_a: %f\n", attn_score_a->cpu()->buf[0]);
 }
 
 /* (Masked) Multi-Head Self Attention
@@ -197,6 +202,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
   /* QKV projection:
     [seq_len, HIDDEN_DIM] ->
     [seq_len, 3*HIDDEN_DIM] */
+  printf("mha_qkv_proj_a: %f\n", mha_qkv_proj_a->cpu()->buf[0]);
   linear(in, attn_w, attn_b, mha_qkv_proj_a);
   printf("mha_qkv_proj_a: %f\n", mha_qkv_proj_a->cpu()->buf[0]);
 
@@ -204,13 +210,11 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [seq_len, 3*HIDDEN_DIM] ->
     [3, seq_len, HIDDEN_DIM] */
   split_qkv(mha_qkv_proj_a, mha_split_qkv_a);
-  printf("mha_split_qkv_a: %f\n", mha_split_qkv_a->cpu()->buf[0]);
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
-  printf("mha_split_head_a: %f\n", mha_split_head_a->cpu()->buf[0]);
 
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);
