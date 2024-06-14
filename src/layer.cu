@@ -31,10 +31,9 @@ void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
   size_t s = in.size();
   size_t H = wte->shape[1];
 
+  // `in` is on the host, so we need to copy it to the device
   int *d_in;
-
   cudaMalloc(&d_in, s * sizeof(int));
-
   cudaMemcpy(d_in, in.data(), s * sizeof(int), cudaMemcpyHostToDevice);
 
   dim3 blockDim(8, 32);
