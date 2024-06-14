@@ -1,5 +1,15 @@
 #include "model.h"
 
+#define CHECK_CUDA(call)                                              \
+  do {                                                                \
+    cudaError_t status_ = call;                                       \
+    if (status_ != cudaSuccess) {                                     \
+      fprintf(stderr, "CUDA error (%s:%d): %s\n", __FILE__, __LINE__, \
+              cudaGetErrorString(status_));                           \
+      exit(EXIT_FAILURE);                                             \
+    }                                                                 \
+  } while (0)
+
 /* [Tensor Structure] */
 /* Tensor
  * @brief - A multi-dimensional matrix containing elements of a single data
@@ -14,9 +24,9 @@ Tensor::Tensor(const vector<size_t> &shape_, int device) : device(device) {
   size_t N_ = num_elem();
 
   if (device >= 0) {
-    cudaSetDevice(device);
-    cudaMalloc(&buf, N_ * sizeof(float));
-    cudaMemset(buf, 0, N_ * sizeof(float));
+    CHECK_CUDA(cudaSetDevice(device));
+    CHECK_CUDA(cudaMalloc(&buf, N_ * sizeof(float)));
+    CHECK_CUDA(cudaMemset(buf, 0, N_ * sizeof(float)));
   } else {
     buf = (float *) calloc(N_, sizeof(float));
   }
@@ -28,9 +38,9 @@ Tensor::Tensor(const vector<size_t> &shape_, float *buf_, int device) : device(d
   size_t N_ = num_elem();
 
   if (device >= 0) {
-    cudaSetDevice(device);
-    cudaMalloc(&buf, N_ * sizeof(float));
-    cudaMemcpy(buf, buf_, N_ * sizeof(float), cudaMemcpyHostToDevice);
+    CHECK_CUDA(cudaSetDevice(device));
+    CHECK_CUDA(cudaMalloc(&buf, N_ * sizeof(float)));
+    CHECK_CUDA(cudaMemcpy(buf, buf_, N_ * sizeof(float), cudaMemcpyHostToDevice));
   } else {  
     buf = (float *) malloc(N_ * sizeof(float));
     memcpy(buf, buf_, N_ * sizeof(float));
@@ -61,7 +71,7 @@ Tensor* Tensor::cpu() {
   Tensor* cpu_tensor = new Tensor(vector<size_t>(shape, shape + ndim), -1);
 
   // Copy data from GPU to CPU
-  cudaMemcpy(cpu_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyDeviceToHost);
+  CHECK_CUDA(cudaMemcpy(cpu_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyDeviceToHost));
 
   return cpu_tensor;
 }
@@ -77,7 +87,7 @@ Tensor* Tensor::set_device(int device) {
   Tensor* device_tensor = new Tensor(vector<size_t>(shape, shape + ndim), device);
 
   // Copy data from CPU to device
-  cudaMemcpy(device_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyHostToDevice);
+  CHECK_CUDA(cudaMemcpy(device_tensor->buf, buf, num_elem() * sizeof(float), cudaMemcpyHostToDevice));
 
   return device_tensor;
 }
