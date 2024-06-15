@@ -292,10 +292,6 @@ void scaling(Tensor *inout, float scale) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-/* Generate mask
- * @param [in & out] inout: [s, s]
- * 's' is the number of tokens in the prompt.
- */
 // CUDA Kernel for generate mask
 __global__ void generate_mask_kernel(float *inout, size_t s) {
     int i = blockIdx.y * blockDim.y + threadIdx.y;
@@ -306,7 +302,10 @@ __global__ void generate_mask_kernel(float *inout, size_t s) {
     }
 }
 
-// Generate mask using CUDA
+/* Generate mask
+ * @param [in & out] inout: [s, s]
+ * 's' is the number of tokens in the prompt.
+ */
 void generate_mask(Tensor *inout) {
   size_t s = inout->shape[0];
 
@@ -430,40 +429,43 @@ void split_head(Tensor *in, size_t n_head, Tensor *out) {
   CHECK_CUDA(cudaGetLastError());
 }
 
+// CUDA Kernel for extract_qkv
+__global__ void extract_qkv_kernel(float *in, size_t head_idx, size_t n_head, float *q, float *k, float *v, size_t B, size_t s, size_t H_) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+    
+    if (b < B && i < s && j < H_) {
+        // q[b, i, j] = in[b, 0, head_idx, i, j]
+        q[(b * s * H_) + i * H_ + j] = in[(b * 3 * n_head * s * H_) + 0 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+        k[(b * s * H_) + i * H_ + j] = in[(b * 3 * n_head * s * H_) + 1 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+        v[(b * s * H_) + i * H_ + j] = in[(b * 3 * n_head * s * H_) + 2 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
+    }   
+}
+
 /* Extract Q, K, V from QKV head
- * @param [in1]       in: [3, n_head, s, H_]
+ * @param [in1]       in: [B, 3, n_head, s, H_]
  * @param [in2] head_idx: [1]
  * @param [in3]   n_head: [1]
- * @param [out]        q: [s, H_]
- * @param [out]        k: [s, H_]
- * @param [out]        v: [s, H_]
+ * @param [out]        q: [B, s, H_]
+ * @param [out]        k: [B, s, H_]
+ * @param [out]        v: [B, s, H_]
+ * 'B' is the batch size.
  * 's' is the number of tokens in the prompt.
  * 'H_' is the hidden dimension/n_head.
  * 'n_head' is the number of heads.
  */
-// CUDA Kernel for extract_qkv
-__global__ void extract_qkv_kernel(float *in, size_t head_idx, size_t n_head, float *q, float *k, float *v, size_t s, size_t H_) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    
-    if (i < s && j < H_) {
-        q[i * H_ + j] = in[0 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
-        k[i * H_ + j] = in[1 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
-        v[i * H_ + j] = in[2 * n_head * s * H_ + head_idx * s * H_ + i * H_ + j];
-    }   
-}
-
-// Extract Q, K, V from QKV head using CUDA
 void extract_qkv(Tensor *in, size_t head_idx, size_t n_head, Tensor *q, Tensor *k, Tensor *v) {
-  size_t s = in->shape[2];
-  size_t H_ = in->shape[3];  // = HIDDEN_DIM/NUM_HEAD
+  size_t B = in->shape[0];
+  size_t s = in->shape[3];
+  size_t H_ = in->shape[4];  // = HIDDEN_DIM/NUM_HEAD
 
   // Define grid and block dimensions
-  dim3 blockDim(8, 32);
-  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H_, blockDim.y));
+  dim3 blockDim(32, 2, 4);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H_, blockDim.z));
 
   // Launch the kernel
-  extract_qkv_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, q->buf, k->buf, v->buf, s, H_);
+  extract_qkv_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, q->buf, k->buf, v->buf, B, s, H_);
   CHECK_CUDA(cudaGetLastError());
 }
 

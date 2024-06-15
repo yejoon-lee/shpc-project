@@ -100,9 +100,9 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
   mha_mask_a = new Activation({prompt_size, prompt_size});
   mha_merge_head_a =
       new Activation({NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_q_a = new Activation({prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_k_a = new Activation({prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_v_a = new Activation({prompt_size, HIDDEN_DIM / NUM_HEAD});
+  mha_q_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
+  mha_k_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
+  mha_v_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_attn_out_a = new Activation({prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_concat_head_a = new Activation({prompt_size, HIDDEN_DIM});
 
@@ -225,7 +225,6 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     printf("%zu", mha_split_head_a->shape[d]);
     printf("\n");
   }
-  return;
 
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);
@@ -236,6 +235,13 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
   for (size_t idx = 0; idx < NUM_HEAD; idx++) {
     /* Extract Q, K, V from qkv_head */
     extract_qkv(mha_split_head_a, idx, NUM_HEAD, mha_q_a, mha_k_a, mha_v_a);
+    printf("Extract QKV\n");
+    for (size_t d = 0; d < mha_q_a->ndim; d++) {
+      printf("%zu", mha_q_a->shape[d]);
+      printf("\n");
+    }
+
+    break;
 
     /* Attention */
     attention(mha_q_a, mha_k_a, mha_v_a, mha_mask_a, mha_attn_out_a);
@@ -245,6 +251,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
       [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
     merge_head(mha_attn_out_a, idx, NUM_HEAD, mha_merge_head_a);
   }
+  return;
 
   /* Concat each heads:
     [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] ->
