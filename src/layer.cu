@@ -17,39 +17,43 @@
     }                                                                 \
   } while (0)
 
-/* Token + Positional Embedding
- * @param [in1]  in: [s]
- * @param [in2] wte: [NUM_VOCAB, H]
- * @param [in3] wpe: [MAX_SEQ_LEN, H]
- * @param [out] out: [s, H]
- * 's' is the number of tokens in the prompt.
- * 'H' is the hidden dimension.
- */
-// CUDA Kernel for token_pos_embedding
-__global__ void token_pos_embedding_kernel(int *in, float *wte, float *wpe, float *out, size_t s, size_t H) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (i < s && j < H) {
-        out[i * H + j] = wte[in[i] * H + j] + wpe[i * H + j];
+// CUDA Kernel for token_pos_embedding
+__global__ void token_pos_embedding_kernel(int *in, float *wte, float *wpe, float *out, size_t B, size_t s, size_t H) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < s && j < H) {
+        // out[b,i,j] = wte[in[b,i],j] + wpe[i,j]
+        out[b * s * H + i * H + j] = wte[in[b * s + i] * H + j] + wpe[i * H + j];
     }
 }
 
-// Token + Positional Embedding using CUDA
+/* Token + Positional Embedding
+ * @param [in1]  in: [B, s]
+ * @param [in2] wte: [NUM_VOCAB, H]
+ * @param [in3] wpe: [MAX_SEQ_LEN, H]
+ * @param [out] out: [B, s, H]
+ * 'B' is the batch size.
+ * 's' is the number of tokens in the prompt.
+ * 'H' is the hidden dimension.
+ */
 void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
-                              Tensor *out) {
-  size_t s = in.size();
+                              Tensor *out, int prompt_size) {
+  size_t s = prompt_size;
+  size_t B = in.size() / s;
   size_t H = wte->shape[1];
 
   // `in` is on the host, so we need to copy it to the device
   int *d_in;
-  cudaMalloc(&d_in, s * sizeof(int));
-  cudaMemcpy(d_in, in.data(), s * sizeof(int), cudaMemcpyHostToDevice);
+  cudaMalloc(&d_in, B*s * sizeof(int));
+  cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice);
 
-  dim3 blockDim(8, 32);
-  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H, blockDim.y));
+  dim3 blockDim(16, 1, 16);
+  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(B, blockDim.y), DIV_CEIL(H, blockDim.z));
 
-  token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, s, H);
+  token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, B, s, H);
 
   CHECK_CUDA(cudaFree(d_in));
 }

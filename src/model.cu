@@ -15,6 +15,8 @@ Parameter *mlp2_b[NUM_LAYER], *mlp2_w[NUM_LAYER];
 Parameter *ln_f_b, *ln_f_g;
 Parameter *wpe, *wte;
 
+#define BATCH_SIZE 1024
+
 void alloc_and_set_parameters(float *param) {
   size_t pos = 0;
   int order[] = {
@@ -85,8 +87,8 @@ Activation *attn_score_a, *k_transposed_a;
 Activation *wte_transposed_a, *residual_a, *logit_a;
 Activation *transformer_block_a;
 
-void alloc_activations(size_t prompt_size) {
-  embd_a = new Activation({prompt_size, HIDDEN_DIM});
+void alloc_activations(size_t prompt_size) { // TODO: add batch dim
+  embd_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
 
   ffn_proj_a = new Activation({prompt_size, 4 * HIDDEN_DIM});
 
@@ -291,13 +293,13 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
-    for (size_t p = 0; p < n_prompt; p++) { // TODO: batching
+    for (size_t p = 0; p < n_prompt; p+=BATCH_SIZE) { // TODO: batching
       int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
-      vector<int> input_prompt(prompt_size);
+      vector<int> input_prompt(prompt_size * BATCH_SIZE);
       memcpy(input_prompt.data(), input + p * prompt_size,
-             prompt_size * sizeof(int));
+             prompt_size * BATCH_SIZE * sizeof(int));
 
       /* Inner loop: generate next token */
       for (size_t t = 0; t < n_token; t++) {
@@ -305,7 +307,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         alloc_activations(prompt_size);
 
         /* Token + Positional Embedding */
-        token_pos_embedding(input_prompt, wte, wpe, embd_a);
+        token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size);
+        printf("Token + Positional Embedding\n");
+        for (size_t d = 0; d < embd_a->ndim; d++) {
+          printf("%zu", embd_a->shape[d]);
+          printf("\n");
+        }
 
         /* Forward path of Transformer blocks */
         for (size_t l = 0; l < NUM_LAYER; l++) {
