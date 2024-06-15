@@ -47,8 +47,8 @@ void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
 
   // `in` is on the host, so we need to copy it to the device
   int *d_in;
-  cudaMalloc(&d_in, B*s * sizeof(int));
-  cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice);
+  CHECK_CUDA(cudaMalloc(&d_in, B*s * sizeof(int)));
+  CHECK_CUDA(cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice));
 
   dim3 blockDim(16, 1, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H, blockDim.z));
