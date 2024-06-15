@@ -215,6 +215,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     printf("%zu", mha_split_qkv_a->shape[d]);
     printf("\n");
   }
+  return;
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
