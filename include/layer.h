@@ -23,6 +23,7 @@ void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out);
 /* Data movement operations */
 void copy(Tensor *in, Tensor *out);
 void transpose(Tensor *in, Tensor *out);
+void transpose_batch(Tensor *in, Tensor *out);
 void split_qkv(Tensor *in, Tensor *out);
 void split_head(Tensor *in, size_t n_head, Tensor *out);
 void concat_head(Tensor *in, Tensor *out);

@@ -120,7 +120,7 @@ void softmax(Tensor *inout) {
     size_t H = inout->shape[2];  // actually equal to s (used on attention scores)
 
     // Define grid and block dimensions
-    dim3 blockDim(128, 2);
+    dim3 blockDim(64, 16);
     dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y));
 
     // Launch the kernel
@@ -293,7 +293,8 @@ __global__ void matmul_ffn_kernel(float *in1, float *in2, float *out, size_t B, 
     if (b < B && i < M && j < N) {
         float sum = 0.0;
         for (int k = 0; k < K; k++) {
-            sum += in1[b * M * K + i * K + k] * in2[b * K * N + k * N + j];
+            // out[b, i, j] = in1[b, i, k] * in2[k, j]
+            sum += in1[b * M * K + i * K + k] * in2[k * N + j];
         }
         out[b * M * N + i * N + j] = sum;
     }
@@ -301,17 +302,17 @@ __global__ void matmul_ffn_kernel(float *in1, float *in2, float *out, size_t B, 
 
 /* Matmul(FFN)
  * @param [in1]  in1: [B, M, K]
- * @param [in2]  in2: [B, K, N]
+ * @param [in2]  in2: [K, N]
  * @param [out]  out: [B, M, N]
  */
 void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
   size_t B = in1->shape[0];
   size_t M = in1->shape[1]; // s
-  size_t K = in1->shape[2]; // H_
-  size_t N = in2->shape[2]; // s
+  size_t K = in1->shape[2]; // H
+  size_t N = in2->shape[1]; // V
 
   // Define grid and block dimensions
-  dim3 blockDim(64, 2, 2);
+  dim3 blockDim(16, 1, 32);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
@@ -320,7 +321,34 @@ void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
 }
 
 // CUDA Kernel for transpose
-__global__ void transpose_kernel(float *in, float *out, size_t B, size_t M, size_t N) {
+__global__ void transpose_kernel(float *in, float *out, size_t M, size_t N) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (i < M && j < N) {
+        out[j * M + i] = in[i * N + j];
+    }
+}
+
+/* Transpose_batch
+ * @param [in1]  in: [M, N]
+ * @param [out] out: [N, M]
+*/
+void transpose(Tensor *in, Tensor *out) {
+  size_t M = in->shape[0]; // V
+  size_t N = in->shape[1]; // H
+
+  // Define grid and block dimensions
+  dim3 blockDim(32, 8);
+  dim3 gridDim(DIV_CEIL(M, blockDim.x), DIV_CEIL(N, blockDim.y));
+
+  // Launch the kernel
+  transpose_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, M, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for transpose_batch
+__global__ void transpose_batch_kernel(float *in, float *out, size_t B, size_t M, size_t N) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
     int i = blockIdx.y * blockDim.y + threadIdx.y;
     int j = blockIdx.z * blockDim.z + threadIdx.z;
@@ -330,21 +358,21 @@ __global__ void transpose_kernel(float *in, float *out, size_t B, size_t M, size
     }
 }
 
-/* Transpose
+/* Transpose_batch
  * @param [in1]  in: [B, M, N]
  * @param [out] out: [B, N, M]
 */
-void transpose(Tensor *in, Tensor *out) {
+void transpose_batch(Tensor *in, Tensor *out) {
   size_t B = in->shape[0];
   size_t M = in->shape[1];
   size_t N = in->shape[2];
 
   // Define grid and block dimensions
-  dim3 blockDim(32, 2, 4);
+  dim3 blockDim(16, 4, 4);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
-  transpose_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, M, N);
+  transpose_batch_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, M, N);
   CHECK_CUDA(cudaGetLastError());
 }
 
@@ -450,7 +478,7 @@ void add_batch(Tensor *inout, Tensor *x) {
   size_t N = inout->num_elem() / B;
 
   // Treat M*N as a single dimension
-  dim3 blockDim(128, 2);
+  dim3 blockDim(64, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(N, blockDim.y));
 
   add_batch_kernel<<<gridDim, blockDim>>>(inout->buf, x->buf, B, N);

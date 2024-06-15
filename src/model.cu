@@ -15,7 +15,7 @@ Parameter *mlp2_b[NUM_LAYER], *mlp2_w[NUM_LAYER];
 Parameter *ln_f_b, *ln_f_g;
 Parameter *wpe, *wte;
 
-#define BATCH_SIZE 1024
+#define BATCH_SIZE 64
 
 void alloc_and_set_parameters(float *param) {
   size_t pos = 0;
@@ -109,7 +109,7 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
   attn_score_a = new Activation({BATCH_SIZE, prompt_size, prompt_size});
   k_transposed_a = new Activation({BATCH_SIZE, HIDDEN_DIM / NUM_HEAD, prompt_size});
 
-  wte_transposed_a = new Activation({BATCH_SIZE, HIDDEN_DIM, NUM_VOCAB});
+  wte_transposed_a = new Activation({HIDDEN_DIM, NUM_VOCAB});
 
   residual_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
   logit_a = new Activation({BATCH_SIZE, prompt_size, NUM_VOCAB});
@@ -170,7 +170,7 @@ void ffn(Activation *in, Parameter *mlp1_w, Parameter *mlp1_b,
 void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
                Activation *out) {
   /* Get Attention score by q @ k */
-  transpose(k, k_transposed_a);
+  transpose_batch(k, k_transposed_a);
   matmul_attnscore(q, k_transposed_a, attn_score_a);
 
   /* Scaling */
@@ -388,15 +388,19 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
         }
-        printf("\nForward path of Transformer blocks\n");
+        printf("Forward path of Transformer blocks\n");
         for (size_t d = 0; d < embd_a->ndim; d++) {
           printf("%zu", embd_a->shape[d]);
           printf("\n");
         }
-        break;
 
         /* Final Layer Normalization */
         layer_norm(embd_a, ln_f_g, ln_f_b);
+        printf("Final Layer Normalization\n");
+        for (size_t d = 0; d < embd_a->ndim; d++) {
+          printf("%zu", embd_a->shape[d]);
+          printf("\n");
+        }
 
         /* Projection to vocab. dimension */
         transpose(wte, wte_transposed_a);
@@ -404,6 +408,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
         /* Greedy sampling (only last timestep is considered) */
         Tensor* logit_a_ = logit_a->cpu();
+        printf("Logit\n");
+        for (size_t d = 0; d < logit_a_->ndim; d++) {
+          printf("%zu", logit_a_->shape[d]);
+          printf("\n");
+        }
+
         int next_token_id = top1_sampling(logit_a_);
 
         /* Update input prompt and prompt size */
@@ -416,6 +426,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Finalize activations for next token generation */
         free_activations();
       }
+      break;
     }
   }
 }
