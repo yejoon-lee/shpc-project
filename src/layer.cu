@@ -360,32 +360,34 @@ void add(Tensor *inout, Tensor *x) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-/* Split into QKV
- * @param [in1]  in: [s, H]
- * @param [out] out: [3, s, H/3]
- */
-// CUDA Kernel for split_qkv
-__global__ void split_qkv_kernel(float *in, float *out, size_t s, size_t H) {
-    int i = blockIdx.z;
+__global__ void split_qkv_kernel(float *in, float *out, size_t B, size_t s, size_t H) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
     int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.x * blockDim.x + threadIdx.x;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
 
-    if (i < 3 && j < s && k < H / 3) {
-        out[i * s * (H / 3) + j * (H / 3) + k] = in[i * (H / 3) + j * 3 * (H / 3) + k];
+    if (b < B && j < s && k < H / 3) {
+      for (size_t i = 0; i < 3; i++) {
+        // out[b, i, j, k] = in[b, j, i * (H / 3) + k]
+        out[(b * s * H) + i * s * (H / 3) + j * (H / 3) + k] = in[(b * s * H) + j * H + i * (H / 3) + k];
+      }
     }
 }
 
-// Split QKV using CUDA
+/* Split into QKV
+ * @param [in1]  in: [B, s, H]
+ * @param [out] out: [B, 3, s, H/3]
+ */
 void split_qkv(Tensor *in, Tensor *out) {
-  size_t s = in->shape[0];
-  size_t H = in->shape[1];
+  size_t B = in->shape[0];
+  size_t s = in->shape[1];
+  size_t H = in->shape[2];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(H / 3, blockDim.x), DIV_CEIL(s, blockDim.y), 3);
+  dim3 blockDim(16, 4, 8);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H / 3, blockDim.z));
 
   // Launch the kernel
-  split_qkv_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, s, H);
+  split_qkv_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, s, H);
   CHECK_CUDA(cudaGetLastError());
 }
 

@@ -94,7 +94,7 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
 
   mha_qkv_proj_a = new Activation({BATCH_SIZE, prompt_size, 3 * HIDDEN_DIM});
   mha_out_a = new Activation({prompt_size, HIDDEN_DIM});
-  mha_split_qkv_a = new Activation({3, prompt_size, HIDDEN_DIM});
+  mha_split_qkv_a = new Activation({BATCH_SIZE, 3, prompt_size, HIDDEN_DIM});
   mha_split_head_a =
       new Activation({3, NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_mask_a = new Activation({prompt_size, prompt_size});
@@ -205,12 +205,16 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     printf("%zu", mha_qkv_proj_a->shape[d]);
     printf("\n");
   }
-  return;
 
   /* Split into Q, K, V:
     [seq_len, 3*HIDDEN_DIM] ->
     [3, seq_len, HIDDEN_DIM] */
   split_qkv(mha_qkv_proj_a, mha_split_qkv_a);
+  printf("Split QKV\n");
+  for (size_t d = 0; d < mha_split_qkv_a->ndim; d++) {
+    printf("%zu", mha_split_qkv_a->shape[d]);
+    printf("\n");
+  }
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
