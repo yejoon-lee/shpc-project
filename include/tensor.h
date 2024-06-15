@@ -7,7 +7,7 @@ using std::vector;
 /* [Tensor Structure] */
 struct Tensor {
   size_t ndim = 0;
-  size_t shape[4];
+  size_t shape[5];
   float *buf = nullptr;
   int device; // -1 for CPU, 0~3 for GPU
 
