@@ -96,7 +96,7 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
   mha_out_a = new Activation({prompt_size, HIDDEN_DIM});
   mha_split_qkv_a = new Activation({BATCH_SIZE, 3, prompt_size, HIDDEN_DIM});
   mha_split_head_a =
-      new Activation({3, NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
+      new Activation({BATCH_SIZE, 3, NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_mask_a = new Activation({prompt_size, prompt_size});
   mha_merge_head_a =
       new Activation({NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
@@ -215,12 +215,17 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     printf("%zu", mha_split_qkv_a->shape[d]);
     printf("\n");
   }
-  return;
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
+  printf("Split Head\n");
+  for (size_t d = 0; d < mha_split_head_a->ndim; d++) {
+    printf("%zu", mha_split_head_a->shape[d]);
+    printf("\n");
+  }
+  return;
 
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);

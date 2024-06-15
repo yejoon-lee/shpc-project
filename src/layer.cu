@@ -26,7 +26,7 @@ __global__ void token_pos_embedding_kernel(int *in, float *wte, float *wpe, floa
 
     if (b < B && i < s && j < H) {
         // out[b,i,j] = wte[in[b,i],j] + wpe[i,j]
-        out[b * s * H + i * H + j] = wte[in[b * s + i] * H + j] + wpe[i * H + j];
+        out[(b * s * H) + i * H + j] = wte[in[b * s + i] * H + j] + wpe[i * H + j];
     }
 }
 
@@ -50,7 +50,7 @@ void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
   CHECK_CUDA(cudaMalloc(&d_in, B*s * sizeof(int)));
   CHECK_CUDA(cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice));
 
-  dim3 blockDim(16, 1, 16);
+  dim3 blockDim(16, 2, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H, blockDim.z));
 
   token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, B, s, H);
@@ -391,38 +391,42 @@ void split_qkv(Tensor *in, Tensor *out) {
   CHECK_CUDA(cudaGetLastError());
 }
 
+// CUDA Kernel for split_head
+__global__ void split_head_kernel(float *in, float *out, size_t B, size_t s, size_t H, size_t n_head) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
+    int k = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && j < n_head && k < s) {
+      for (size_t i = 0; i < 3; i++) {
+        for (size_t l = 0; l < H / n_head; l++) {
+            // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
+            out[(b * 3 * s * H) + i * s * H + j * s * H / n_head + k * H / n_head + l] =
+                in[(b * 3 * s * H) + i * s * H + k * H + j * H / n_head + l];
+        }
+      }
+    }
+}
+
 /* Split into heads
- * @param [in1]  in: [3, s, H]
- * @param [out] out: [3, n_head, s, H/n_head]
+ * @param [in1]  in: [B, 3, s, H]
+ * @param [out] out: [B, 3, n_head, s, H/n_head]
+ * 'B' is the batch size.
  * 's' is the number of tokens in the prompt.
  * 'H' is the hidden dimension.
  * 'n_head' is the number of heads.
  */
-// CUDA Kernel for split_head
-__global__ void split_head_kernel(float *in, float *out, size_t s, size_t H, size_t n_head) {
-    int i = blockIdx.z;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (i < 3 && j < n_head && k < s) {
-        for (int l = 0; l < H / n_head; l++) {
-            out[i * n_head * s * H / n_head + j * s * H / n_head + k * H / n_head + l] =
-                in[i * s * H + k * H + j * H / n_head + l];
-        }
-    }
-}
-
-// Split head using CUDA
 void split_head(Tensor *in, size_t n_head, Tensor *out) {
-  size_t s = in->shape[1];
-  size_t H = in->shape[2];
+  size_t B = in->shape[0];
+  size_t s = in->shape[2];
+  size_t H = in->shape[3];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(H / n_head, blockDim.x), DIV_CEIL(s, blockDim.y), 3);
+  dim3 blockDim(16, 4, 8);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), n_head);
 
   // Launch the kernel
-  split_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, s, H, n_head);
+  split_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, s, H, n_head);
   CHECK_CUDA(cudaGetLastError());
 }
 
