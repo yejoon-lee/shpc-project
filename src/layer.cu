@@ -127,48 +127,51 @@ void softmax(Tensor *inout) {
 
 
 
-/* Layer Normalization
- * @param [in1 & out] inout: [s, H]
- * @param [in2]       gamma: [H]
- * @param [in3]        beta: [H]
- * 's' is the number of tokens in the prompt.
- * 'H' is the hidden dimension.
- */
 // CUDA Kernel for layer normalization
-__global__ void layer_norm_kernel(float *inout, float *gamma, float *beta, size_t s, size_t H) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+__global__ void layer_norm_kernel(float *inout, float *gamma, float *beta, size_t B, size_t s, size_t H) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (i < s){
+    if (b < B && i < s){
         float eps = 1e-5;
         float mean = 0;
         float var = 0;
 
+        // Compute the mean and variance
         for (size_t j = 0; j < H; j++) {
-            mean += inout[i * H + j];
-            var += inout[i * H + j] * inout[i * H + j];
+            mean += inout[b * s * H + i * H + j];
+            var += inout[b * s * H + i * H + j] * inout[b * s * H + i * H + j];
         }
-
         mean /= H;
         var = var / H - mean * mean;
 
+        // Normalize the row
         for (size_t j = 0; j < H; j++) {
-            inout[i * H + j] = (inout[i * H + j] - mean) * 
+            inout[b * s * H + i * H + j] = (inout[b * s * H + i * H + j] - mean) *
             (1.0 / sqrt(var + eps)) * gamma[j] + beta[j];
         }
     }
 }
 
-// Layer normalization using CUDA
+/* Layer Normalization
+ * @param [in1 & out] inout: [B, s, H]
+ * @param [in2]       gamma: [H]
+ * @param [in3]        beta: [H]
+ * 'B' is the batch size.
+ * 's' is the number of tokens in the prompt.
+ * 'H' is the hidden dimension.
+ */
 void layer_norm(Tensor *inout, Tensor *gamma, Tensor *beta) {
-  size_t s = inout->shape[0];
-  size_t H = inout->shape[1];
+  size_t B = inout->shape[0];
+  size_t s = inout->shape[1];
+  size_t H = inout->shape[2];
 
     // Define grid and block dimensions
-    dim3 blockDim(256);
-    dim3 gridDim(DIV_CEIL(s, blockDim.x));
+    dim3 blockDim(16, 16);
+    dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y));
 
     // Launch the kernel
-    layer_norm_kernel<<<gridDim, blockDim>>>(inout->buf, gamma->buf, beta->buf, s, H);
+    layer_norm_kernel<<<gridDim, blockDim>>>(inout->buf, gamma->buf, beta->buf, B, s, H);
     CHECK_CUDA(cudaGetLastError());
 }
 
@@ -315,18 +318,17 @@ void generate_mask(Tensor *inout) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-/* Copy
- * @param [in1]  in: [N]
- * @param [out] out: [N]
- * 'N' is the number of elements in the tensor.
- */
 // CUDA Kernel for copy
 __global__ void copy_kernel(float *in, float *out, size_t N) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < N) { out[idx] = in[idx]; }
 }
 
-// Copy using CUDA
+/* Copy
+ * @param [in1]  in: [N]
+ * @param [out] out: [N]
+ * 'N' is the number of elements in the tensor.
+ */
 void copy(Tensor *in, Tensor *out) {
   size_t N = in->num_elem();
 

@@ -111,7 +111,7 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
 
   wte_transposed_a = new Activation({HIDDEN_DIM, NUM_VOCAB});
 
-  residual_a = new Activation({prompt_size, HIDDEN_DIM});
+  residual_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
   logit_a = new Activation({prompt_size, NUM_VOCAB});
   transformer_block_a = new Activation({prompt_size, HIDDEN_DIM});
 }
@@ -266,6 +266,12 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* Layer Normalization */
   layer_norm(in, ln_1_g, ln_1_b);
+  printf("Layer Normalization\n");
+  for (size_t d = 0; d < in->ndim; d++) {
+    printf("%zu", in->shape[d]);
+    printf("\n");
+  }
+  return;
 
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
@@ -308,7 +314,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
         /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size);
-        printf("Token + Positional Embedding\n");
+        printf("\nToken + Positional Embedding\n");
         for (size_t d = 0; d < embd_a->ndim; d++) {
           printf("%zu", embd_a->shape[d]);
           printf("\n");
@@ -320,10 +326,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
                             ln_1_b[l], ln_1_g[l], ln_2_b[l], ln_2_g[l],
                             mlp1_b[l], mlp1_w[l], mlp2_b[l], mlp2_w[l],
                             transformer_block_a);
+          break;
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
         }
+        break;
 
         /* Final Layer Normalization */
         layer_norm(embd_a, ln_f_g, ln_f_b);
