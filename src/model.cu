@@ -90,30 +90,30 @@ Activation *transformer_block_a;
 void alloc_activations(size_t prompt_size) { // TODO: add batch dim
   embd_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
 
-  ffn_proj_a = new Activation({prompt_size, 4 * HIDDEN_DIM});
+  ffn_proj_a = new Activation({BATCH_SIZE, prompt_size, 4 * HIDDEN_DIM});
 
   mha_qkv_proj_a = new Activation({BATCH_SIZE, prompt_size, 3 * HIDDEN_DIM});
-  mha_out_a = new Activation({prompt_size, HIDDEN_DIM});
+  mha_out_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
   mha_split_qkv_a = new Activation({BATCH_SIZE, 3, prompt_size, HIDDEN_DIM});
   mha_split_head_a =
       new Activation({BATCH_SIZE, 3, NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_mask_a = new Activation({prompt_size, prompt_size});
+  mha_mask_a = new Activation({prompt_size, prompt_size}); // w/o batch dim
   mha_merge_head_a =
-      new Activation({NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
+      new Activation({BATCH_SIZE, NUM_HEAD, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_q_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_k_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
   mha_v_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_attn_out_a = new Activation({prompt_size, HIDDEN_DIM / NUM_HEAD});
-  mha_concat_head_a = new Activation({prompt_size, HIDDEN_DIM});
+  mha_attn_out_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM / NUM_HEAD});
+  mha_concat_head_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
 
-  attn_score_a = new Activation({prompt_size, prompt_size});
-  k_transposed_a = new Activation({HIDDEN_DIM / NUM_HEAD, prompt_size});
+  attn_score_a = new Activation({BATCH_SIZE, prompt_size, prompt_size});
+  k_transposed_a = new Activation({BATCH_SIZE, HIDDEN_DIM / NUM_HEAD, prompt_size});
 
-  wte_transposed_a = new Activation({HIDDEN_DIM, NUM_VOCAB});
+  wte_transposed_a = new Activation({BATCH_SIZE, HIDDEN_DIM, NUM_VOCAB});
 
   residual_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
-  logit_a = new Activation({prompt_size, NUM_VOCAB});
-  transformer_block_a = new Activation({prompt_size, HIDDEN_DIM});
+  logit_a = new Activation({BATCH_SIZE, prompt_size, NUM_VOCAB});
+  transformer_block_a = new Activation({BATCH_SIZE, prompt_size, HIDDEN_DIM});
 }
 
 void free_activations() {
@@ -171,19 +171,38 @@ void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
                Activation *out) {
   /* Get Attention score by q @ k */
   transpose(k, k_transposed_a);
-  matmul(q, k_transposed_a, attn_score_a);
+  matmul_attnscore(q, k_transposed_a, attn_score_a);
 
   /* Scaling */
   scaling(attn_score_a, (1.0 / sqrt(k->shape[1])));
 
   /* Masking */
-  add(attn_score_a, mask);
+  for (size_t i = 0; i < mask->ndim; i++) {
+    printf("Mask: %zu", mask->shape[i]);
+    printf("\n");
+  }
+  for (size_t i = 0; i < attn_score_a->ndim; i++) {
+    printf("Attn score: %zu", attn_score_a->shape[i]);
+    printf("\n");
+  }
+
+  add_batch(attn_score_a, mask);
+  printf("Before softmax\n");
+  for (size_t d = 0; d < attn_score_a->ndim; d++) {
+    printf("%zu", attn_score_a->shape[d]);
+    printf("\n");
+  }
 
   /* Softmax */
   softmax(attn_score_a);
+  printf("After softmax\n");
+  for (size_t d = 0; d < attn_score_a->ndim; d++) {
+    printf("%zu", attn_score_a->shape[d]);
+    printf("\n");
+  }
 
   /* Attention score @ v */
-  matmul(attn_score_a, v, out);
+  matmul_attnout(attn_score_a, v, out);
 }
 
 /* (Masked) Multi-Head Self Attention
@@ -241,22 +260,34 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
       printf("\n");
     }
 
-    break;
-
     /* Attention */
     attention(mha_q_a, mha_k_a, mha_v_a, mha_mask_a, mha_attn_out_a);
+    printf("Attention\n");
+    for (size_t d = 0; d < mha_attn_out_a->ndim; d++) {
+      printf("%zu", mha_attn_out_a->shape[d]);
+      printf("\n");
+    }
 
     /* Merge each head's attn output
       [seq_len, HIDDEN_DIM/NUM_HEAD] ->
       [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
     merge_head(mha_attn_out_a, idx, NUM_HEAD, mha_merge_head_a);
+    printf("Merge Head\n");
+    for (size_t d = 0; d < mha_merge_head_a->ndim; d++) {
+      printf("%zu", mha_merge_head_a->shape[d]);
+      printf("\n");
+    }
   }
-  return;
 
   /* Concat each heads:
     [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] ->
     [seq_len, HIDDEN_DIM] */
   concat_head(mha_merge_head_a, mha_concat_head_a);
+  printf("Concat Head\n");
+  for (size_t d = 0; d < mha_concat_head_a->ndim; d++) {
+    printf("%zu", mha_concat_head_a->shape[d]);
+    printf("\n");
+  }
 
   /* OUT projection:
     [seq_len, HIDDEN_DIM] -> [seq_len, HIDDEN_DIM] */
@@ -297,7 +328,11 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
-  return;
+  printf("Masked Multi-Head Self-Attention\n");
+  for (size_t d = 0; d < mha_out_a->ndim; d++) {
+    printf("%zu", mha_out_a->shape[d]);
+    printf("\n");
+  }
 
   /* Add Residual */
   add(mha_out_a, residual_a);
@@ -349,10 +384,14 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
                             ln_1_b[l], ln_1_g[l], ln_2_b[l], ln_2_g[l],
                             mlp1_b[l], mlp1_w[l], mlp2_b[l], mlp2_w[l],
                             transformer_block_a);
-          break;
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
+        }
+        printf("\nForward path of Transformer blocks\n");
+        for (size_t d = 0; d < embd_a->ndim; d++) {
+          printf("%zu", embd_a->shape[d]);
+          printf("\n");
         }
         break;
 
@@ -361,7 +400,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
         /* Projection to vocab. dimension */
         transpose(wte, wte_transposed_a);
-        matmul(embd_a, wte_transposed_a, logit_a);
+        matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
         /* Greedy sampling (only last timestep is considered) */
         Tensor* logit_a_ = logit_a->cpu();

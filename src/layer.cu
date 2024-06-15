@@ -80,48 +80,51 @@ void gelu(Tensor *inout) {
 }
 
 
-/* Softmax (w/ Max Trick)
- * @param [in & out] inout: [s, H]
- * 's' is the number of tokens in the prompt.
- * 'H' is the hidden dimension.
- */
-__global__ void softmax_kernel(float *inout, size_t s, size_t H) {
+// CUDA Kernel for softmax
+__global__ void softmax_kernel(float *inout, size_t B, size_t s, size_t H) {
     // Calculate the thread indices
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (i < s){
+    if (b < B && i < s){
       // Find the maximum value in the row
-      float max_val = inout[i * H];
+      float max_val = inout[b * s * H + i * H];
       for (size_t j = 1; j < H; j++) {
-          if (inout[i * H + j] > max_val) {
-              max_val = inout[i * H + j];
+          if (inout[b * s * H + i * H + j] > max_val) {
+              max_val = inout[b * s * H + i * H + j];
           }
       }
 
       // Compute the denominator
       float sum = 0.0;
       for (size_t j = 0; j < H; j++) {
-        inout[i * H + j] = exp(inout[i * H + j] - max_val);
-        sum += inout[i * H + j];
+        inout[b * s * H + i * H + j] = exp(inout[b * s * H + i * H + j] - max_val);
+        sum += inout[b * s * H + i * H + j];
       }
 
       // Normalize the row
       for (size_t j = 0; j < H; j++) {
-        inout[i * H + j] /= sum;
+        inout[b * s * H + i * H + j] /= sum;
       }
     }
 }
 
+/* Softmax (w/ Max Trick)
+ * @param [in & out] inout: [B, s, H]
+ * 's' is the number of tokens in the prompt.
+ * 'H' is the hidden dimension.
+ */
 void softmax(Tensor *inout) {
-    size_t s = inout->shape[0];
-    size_t H = inout->shape[1];
+    size_t B = inout->shape[0];
+    size_t s = inout->shape[1];
+    size_t H = inout->shape[2];  // actually equal to s (used on attention scores)
 
     // Define grid and block dimensions
-    dim3 blockDim(32); // warp = 32 threads
-    dim3 gridDim(DIV_CEIL(s, blockDim.x));
+    dim3 blockDim(128, 2);
+    dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y));
 
     // Launch the kernel
-    softmax_kernel<<<gridDim, blockDim>>>(inout->buf, s, H);
+    softmax_kernel<<<gridDim, blockDim>>>(inout->buf, B, s, H);
     CHECK_CUDA(cudaGetLastError());
 }
 
@@ -211,66 +214,144 @@ void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
   CHECK_CUDA(cudaGetLastError());
 }
 
-/* Matmul
- * @param [in1]  in1: [M, K]
- * @param [in2]  in2: [K, N]
- * @param [out]  out: [M, N]
- */
-// CUDA Kernel for matmul
-__global__ void matmul_kernel(float *in1, float *in2, float *out, size_t M, size_t K, size_t N) {
+// CUDA Kernel for matmul_attnscore
+__global__ void matmul_attnscore_kernel(float *in1, float *in2, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
     int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
 
-    if (i < M && j < N) {
+    if (b < B && i < M && j < N) {
         float sum = 0.0;
         for (int k = 0; k < K; k++) {
-            sum += in1[i * K + k] * in2[k * N + j];
+            sum += in1[b * M * K + i * K + k] * in2[b * K * N + k * N + j];
         }
-        out[i * N + j] = sum;
+        out[b * M * N + i * N + j] = sum;
     }
 }
 
-// Matmul using CUDA
-void matmul(Tensor *in1, Tensor *in2, Tensor *out) {
-  size_t M = in1->shape[0];
-  size_t K = in1->shape[1];
-  size_t N = in2->shape[1];
+/* Matmul(Attention Score)
+ * @param [in1]  in1: [B, M, K]
+ * @param [in2]  in2: [B, K, N]
+ * @param [out]  out: [B, M, N]
+ */
+void matmul_attnscore(Tensor *in1, Tensor *in2, Tensor *out) {
+  size_t B = in1->shape[0];
+  size_t M = in1->shape[1]; // s
+  size_t K = in1->shape[2]; // H_
+  size_t N = in2->shape[2]; // s
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(N, blockDim.x), DIV_CEIL(M, blockDim.y));
+  dim3 blockDim(64, 2, 2);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
-  matmul_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, M, K, N);
+  matmul_attnscore_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, B, M, K, N);
   CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for matmul_attnout
+__global__ void matmul_attnout_kernel(float *in1, float *in2, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        float sum = 0.0;
+        for (int k = 0; k < K; k++) {
+            sum += in1[b * M * K + i * K + k] * in2[b * K * N + k * N + j];
+        }
+        out[b * M * N + i * N + j] = sum;
+    }
+}
+
+/* Matmul(Attention Output)
+ * @param [in1]  in1: [B, M, K]
+ * @param [in2]  in2: [B, K, N]
+ * @param [out]  out: [B, M, N]
+ */
+void matmul_attnout(Tensor *in1, Tensor *in2, Tensor *out) {
+  size_t B = in1->shape[0];
+  size_t M = in1->shape[1]; // s
+  size_t K = in1->shape[2]; // s
+  size_t N = in2->shape[2]; // H_
+
+  // Define grid and block dimensions
+  dim3 blockDim(64, 2, 2);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+
+  // Launch the kernel
+  matmul_attnout_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, B, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for matmul_ffn
+__global__ void matmul_ffn_kernel(float *in1, float *in2, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        float sum = 0.0;
+        for (int k = 0; k < K; k++) {
+            sum += in1[b * M * K + i * K + k] * in2[b * K * N + k * N + j];
+        }
+        out[b * M * N + i * N + j] = sum;
+    }
+}
+
+/* Matmul(FFN)
+ * @param [in1]  in1: [B, M, K]
+ * @param [in2]  in2: [B, K, N]
+ * @param [out]  out: [B, M, N]
+ */
+void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
+  size_t B = in1->shape[0];
+  size_t M = in1->shape[1]; // s
+  size_t K = in1->shape[2]; // H_
+  size_t N = in2->shape[2]; // s
+
+  // Define grid and block dimensions
+  dim3 blockDim(64, 2, 2);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+
+  // Launch the kernel
+  matmul_ffn_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, B, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for transpose
+__global__ void transpose_kernel(float *in, float *out, size_t B, size_t M, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        out[b * N * M + j * M + i] = in[b * M * N + i * N + j];
+    }
 }
 
 /* Transpose
- * @param [in1]  in: [M, N]
- * @param [out] out: [N, M]
- */
-// CUDA Kernel for transpose
-__global__ void transpose_kernel(float *in, float *out, size_t M, size_t N) {
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
-
-    if (i < M && j < N) {
-        out[j * M + i] = in[i * N + j];
-    }
-}
-
-// Transpose using CUDA
+ * @param [in1]  in: [B, M, N]
+ * @param [out] out: [B, N, M]
+*/
 void transpose(Tensor *in, Tensor *out) {
-  size_t M = in->shape[0];
-  size_t N = in->shape[1];
+  size_t B = in->shape[0];
+  size_t M = in->shape[1];
+  size_t N = in->shape[2];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(N, blockDim.x), DIV_CEIL(M, blockDim.y));
+  dim3 blockDim(32, 2, 4);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
-  transpose_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, M, N);
+  transpose_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, M, N);
   CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for scaling
+__global__ void scaling_kernel(float *inout, float scale, size_t N) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < N) { inout[idx] *= scale; }
 }
 
 /* Scaling
@@ -278,13 +359,6 @@ void transpose(Tensor *in, Tensor *out) {
  * @param [in2]       scale: [1]
  * 'N' is the number of elements in the tensor.
  */
-// CUDA Kernel for scaling
-__global__ void scaling_kernel(float *inout, float scale, size_t N) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < N) { inout[idx] *= scale; }
-}
-
-// Scaling using CUDA
 void scaling(Tensor *inout, float scale) {
   size_t N = inout->num_elem();
 
@@ -337,11 +411,7 @@ void copy(Tensor *in, Tensor *out) {
 }
 
 
-/* Add GPU kernel
- * @param [in1 & out] inout: [N]
- * @param [in2]           x: [N]
- * 'N' is the number of elements in the tensor.
- */
+// CUDA Kernel for add
 __global__ void add_kernel(float *inout, float *x, size_t N) {
   size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx < N) { inout[idx] += x[idx]; }
@@ -356,6 +426,34 @@ void add(Tensor *inout, Tensor *x) {
   size_t N = inout->num_elem();
 
   add_kernel<<<(N + 255) / 256, 256>>>(inout->buf, x->buf, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+
+__global__ void add_batch_kernel(float *inout, float *x, size_t B, size_t N) {
+  size_t b = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t i = blockIdx.y * blockDim.y + threadIdx.y;
+
+  if (b < B && i < N) { 
+    inout[b * N + i] += x[b * N + i];
+    }
+}
+
+/* Add using CUDA GPU
+ * @param [in1 & out] inout: [B, M, N]
+ * @param [in2]           x: [M, N]
+ * 'B' is the batch size.
+ * 'N' is the number of elements in the tensor.
+ */
+void add_batch(Tensor *inout, Tensor *x) {
+  size_t B = inout->shape[0];
+  size_t N = inout->num_elem() / B;
+
+  // Treat M*N as a single dimension
+  dim3 blockDim(128, 2);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(N, blockDim.y));
+
+  add_batch_kernel<<<gridDim, blockDim>>>(inout->buf, x->buf, B, N);
   CHECK_CUDA(cudaGetLastError());
 }
 
@@ -469,70 +567,75 @@ void extract_qkv(Tensor *in, size_t head_idx, size_t n_head, Tensor *q, Tensor *
   CHECK_CUDA(cudaGetLastError());
 }
 
+// CUDA Kernel for merge_head
+__global__ void merge_head_kernel(float *in, size_t head_idx, size_t n_head, float *out, size_t B, size_t s, size_t H_) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < s && j < H_) {
+        out[b * n_head * s * H_ + head_idx * s * H_ + i * H_ + j] = in[b * s * H_ + i * H_ + j];
+    }
+}
+
 /* Merge each heads
- * @param [in1]       in: [s, H_]
+ * @param [in1]       in: [B, s, H_]
  * @param [in2] head_idx: [1]
  * @param [in3]   n_head: [1]
- * @param [out]      out: [n_head, s, H_]
+ * @param [out]      out: [B, n_head, s, H_]
+ * 'B' is the batch size.
  * 's' is the number of tokens in the prompt.
  * 'H_' is the hidden dimension/n_head.
  * 'n_head' is the number of heads.
  */
-// CUDA Kernel for merge_head
-__global__ void merge_head_kernel(float *in, size_t head_idx, size_t n_head, float *out, size_t s, size_t H_) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (i < s && j < H_) {
-        out[head_idx * s * H_ + i * H_ + j] = in[i * H_ + j];
-    }
-}
-
-// Merge each heads using CUDA
 void merge_head(Tensor *in, size_t head_idx, size_t n_head, Tensor *out) {
-  size_t s = in->shape[0];
-  size_t H_ = in->shape[1];  // = HIDDEN_DIM/NUM_HEAD
-
-  // Define grid and block dimensions
-  dim3 blockDim(8, 32);
-  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H_, blockDim.y));
-
-  // Launch the kernel
-  merge_head_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, out->buf, s, H_);
-  CHECK_CUDA(cudaGetLastError());
-}
-
-/* Concatenate each heads
- * @param [in1]     in: [n_head, s, H_]
- * @param [out]    out: [s, H_*n_head]
- * 'n_head' is the number of heads.
- * 's' is the number of tokens in the prompt.
- * 'H_' is the hidden dimension/n_head.
- */
-// CUDA Kernel for concat_head
-__global__ void concat_head_kernel(float *in, float *out, size_t n_head, size_t s, size_t H_) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (i < s && j < n_head) {
-        for (size_t k = 0; k < H_; k++) {
-            out[i * n_head * H_ + j * H_ + k] = in[j * s * H_ + i * H_ + k];
-        }
-    }
-}
-
-// Concatenate each heads using CUDA
-void concat_head(Tensor *in, Tensor *out) {
-  size_t n_head = in->shape[0];
+  size_t B = in->shape[0];
   size_t s = in->shape[1];
   size_t H_ = in->shape[2];  // = HIDDEN_DIM/NUM_HEAD
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
-  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(n_head, blockDim.y));
+  dim3 blockDim(32, 2, 4);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H_, blockDim.z));
 
   // Launch the kernel
-  concat_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, n_head, s, H_);
+  merge_head_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, out->buf, B, s, H_);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for concat_head
+__global__ void concat_head_kernel(float *in, float *out, size_t B, size_t n_head, size_t s, size_t H_) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < s && j < n_head) {
+        for (size_t k = 0; k < H_; k++) {
+            out[b * s * (H_ * n_head) + i * (H_ * n_head) + (j * H_ + k)] = in[b * n_head * s * H_ + j * s * H_ + i * H_ + k];
+        }
+    }
+}
+
+/* Concatenate each heads
+ * @param [in1]     in: [B, n_head, s, H_]
+ * @param [out]    out: [B, s, H]
+ * H = H_ * n_head
+ * 'B' is the batch size.
+ * 'n_head' is the number of heads.
+ * 's' is the number of tokens in the prompt.
+ * 'H_' is the hidden dimension/n_head.
+ */
+void concat_head(Tensor *in, Tensor *out) {
+  size_t B = in->shape[0];
+  size_t n_head = in->shape[1];
+  size_t s = in->shape[2];
+  size_t H_ = in->shape[3];  // = HIDDEN_DIM/NUM_HEAD
+
+  // Define grid and block dimensions
+  dim3 blockDim(64, 2, 2);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(n_head, blockDim.z));
+
+  // Launch the kernel
+  concat_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, n_head, s, H_);
   CHECK_CUDA(cudaGetLastError());
 }
 
