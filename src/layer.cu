@@ -41,7 +41,7 @@ void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
 
   token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, s, H);
 
-  cudaFree(d_in);
+  CHECK_CUDA(cudaFree(d_in));
 }
 
 /* GELU
@@ -62,6 +62,7 @@ void gelu(Tensor *inout) {
   size_t N = inout->num_elem();
 
   gelu_kernel<<<DIV_CEIL(N, 256), 256>>>(inout->buf, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 
@@ -130,6 +131,8 @@ void softmax(Tensor *inout) {
     if (err != cudaSuccess) {
         printf("CUDA Error: %s\n", cudaGetErrorString(err));
     }
+    softmax_kernel<<<gridDim, blockDim>>>(inout->buf, s, H);
+    CHECK_CUDA(cudaGetLastError());
 }
 
 
@@ -176,7 +179,7 @@ void layer_norm(Tensor *inout, Tensor *gamma, Tensor *beta) {
 
     // Launch the kernel
     layer_norm_kernel<<<gridDim, blockDim>>>(inout->buf, gamma->buf, beta->buf, s, H);
-
+    CHECK_CUDA(cudaGetLastError());
 }
 
 /* Linear
@@ -211,6 +214,7 @@ void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
 
   // Launch the kernel
   linear_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Matmul
@@ -244,6 +248,7 @@ void matmul(Tensor *in1, Tensor *in2, Tensor *out) {
 
   // Launch the kernel
   matmul_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Transpose
@@ -271,6 +276,7 @@ void transpose(Tensor *in, Tensor *out) {
 
   // Launch the kernel
   transpose_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, M, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Scaling
@@ -289,6 +295,7 @@ void scaling(Tensor *inout, float scale) {
   size_t N = inout->num_elem();
 
   scaling_kernel<<<DIV_CEIL(N, 256), 256>>>(inout->buf, scale, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Generate mask
@@ -315,6 +322,7 @@ void generate_mask(Tensor *inout) {
 
   // Launch the kernel
   generate_mask_kernel<<<gridDim, blockDim>>>(inout->buf, s);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Copy
@@ -333,6 +341,7 @@ void copy(Tensor *in, Tensor *out) {
   size_t N = in->num_elem();
 
   copy_kernel<<<DIV_CEIL(N, 256), 256>>>(in->buf, out->buf, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 
@@ -355,6 +364,7 @@ void add(Tensor *inout, Tensor *x) {
   size_t N = inout->num_elem();
 
   add_kernel<<<(N + 255) / 256, 256>>>(inout->buf, x->buf, N);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Split into QKV
@@ -383,6 +393,7 @@ void split_qkv(Tensor *in, Tensor *out) {
 
   // Launch the kernel
   split_qkv_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, s, H);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Split into heads
@@ -417,6 +428,7 @@ void split_head(Tensor *in, size_t n_head, Tensor *out) {
 
   // Launch the kernel
   split_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, s, H, n_head);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Extract Q, K, V from QKV head
@@ -448,11 +460,12 @@ void extract_qkv(Tensor *in, size_t head_idx, size_t n_head, Tensor *q, Tensor *
   size_t H_ = in->shape[3];  // = HIDDEN_DIM/NUM_HEAD
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
+  dim3 blockDim(8, 32);
   dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H_, blockDim.y));
 
   // Launch the kernel
   extract_qkv_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, q->buf, k->buf, v->buf, s, H_);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Merge each heads
@@ -480,11 +493,12 @@ void merge_head(Tensor *in, size_t head_idx, size_t n_head, Tensor *out) {
   size_t H_ = in->shape[1];  // = HIDDEN_DIM/NUM_HEAD
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 16);
+  dim3 blockDim(8, 32);
   dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(H_, blockDim.y));
 
   // Launch the kernel
   merge_head_kernel<<<gridDim, blockDim>>>(in->buf, head_idx, n_head, out->buf, s, H_);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Concatenate each heads
@@ -518,6 +532,7 @@ void concat_head(Tensor *in, Tensor *out) {
 
   // Launch the kernel
   concat_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, n_head, s, H_);
+  CHECK_CUDA(cudaGetLastError());
 }
 
 /* Greedy Max Sampling
