@@ -181,7 +181,7 @@ int main(int argc, char **argv) {
   ////////////////////////////////////////////////////////////////////
 
   double st = 0.0, et = 0.0;
-  for (size_t i = 0; i < 4; i++) {
+  for (size_t i = 0; i < 1; i++) {
     cudaSetDevice(i);
     cudaDeviceSynchronize();
   }
@@ -195,7 +195,7 @@ int main(int argc, char **argv) {
   /* Call the main computation (optimization target) of the program. */
   generate_tokens(input, output, num_prompts, num_generate_token);
   
-  for (size_t i = 0; i < 4; i++) {
+  for (size_t i = 0; i < 1; i++) {
     cudaSetDevice(i);
     cudaDeviceSynchronize();
   }
