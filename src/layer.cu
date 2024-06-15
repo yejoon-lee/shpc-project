@@ -7,6 +7,16 @@
 
 #define DIV_CEIL(a, b) (((a) + (b)-1) / (b))
 
+#define CHECK_CUDA(call)                                              \
+  do {                                                                \
+    cudaError_t status_ = call;                                       \
+    if (status_ != cudaSuccess) {                                     \
+      fprintf(stderr, "CUDA error (%s:%d): %s\n", __FILE__, __LINE__, \
+              cudaGetErrorString(status_));                           \
+      exit(EXIT_FAILURE);                                             \
+    }                                                                 \
+  } while (0)
+
 /* Token + Positional Embedding
  * @param [in1]  in: [s]
  * @param [in2] wte: [NUM_VOCAB, H]
@@ -73,44 +83,28 @@ void gelu(Tensor *inout) {
  */
 __global__ void softmax_kernel(float *inout, size_t s, size_t H) {
     // Calculate the thread indices
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
 
-    if (row < s) {
-        extern __shared__ float shared_mem[];
+    if (i < s){
+      // Find the maximum value in the row
+      float max_val = inout[i * H];
+      for (size_t j = 1; j < H; j++) {
+          if (inout[i * H + j] > max_val) {
+              max_val = inout[i * H + j];
+          }
+      }
 
-        // Load the row into shared memory
-        float max_val = -INFINITY;
-        for (int col = threadIdx.x; col < H; col += blockDim.x) {
-            shared_mem[threadIdx.x] = inout[row * H + col];
-            __syncthreads();
+      // Compute the denominator
+      float sum = 0.0;
+      for (size_t j = 0; j < H; j++) {
+        inout[i * H + j] = exp(inout[i * H + j] - max_val);
+        sum += inout[i * H + j];
+      }
 
-            // Find the maximum value in the row
-            for (int k = 0; k < blockDim.x; k++) {
-                if (shared_mem[k] > max_val) {
-                    max_val = shared_mem[k];
-                }
-            }
-            __syncthreads();
-        }
-
-        // Calculate the exponentials and sum them
-        float sum = 0;
-        for (int col = threadIdx.x; col < H; col += blockDim.x) {
-            shared_mem[threadIdx.x] = exp(inout[row * H + col] - max_val);
-            __syncthreads();
-
-            // Compute the sum of the exponentials
-            for (int k = 0; k < blockDim.x; k++) {
-                sum += shared_mem[k];
-            }
-            __syncthreads();
-        }
-
-        // Normalize the values
-        for (int col = threadIdx.x; col < H; col += blockDim.x) {
-            inout[row * H + col] = shared_mem[threadIdx.x] / sum;
-            __syncthreads();
-        }
+      // Normalize the row
+      for (size_t j = 0; j < H; j++) {
+        inout[i * H + j] /= sum;
+      }
     }
 }
 
@@ -119,18 +113,10 @@ void softmax(Tensor *inout) {
     size_t H = inout->shape[1];
 
     // Define grid and block dimensions
-    dim3 blockDim(256); // Use 256 threads per block for better performance
-    dim3 gridDim(1, s);
+    dim3 blockDim(32); // warp = 32 threads
+    dim3 gridDim(DIV_CEIL(s, blockDim.x));
 
     // Launch the kernel
-    size_t shared_memory_size = blockDim.x * sizeof(float);
-    softmax_kernel<<<gridDim, blockDim, shared_memory_size>>>(inout->buf, s, H);
-
-    // Check for CUDA errors
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        printf("CUDA Error: %s\n", cudaGetErrorString(err));
-    }
     softmax_kernel<<<gridDim, blockDim>>>(inout->buf, s, H);
     CHECK_CUDA(cudaGetLastError());
 }
