@@ -289,14 +289,6 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
   int mpi_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &mpi_rank);
 
-  // Re-map CUDA device ids to 0~3
-  int deviceCount;
-  cudaGetDeviceCount(&deviceCount);
-  cudaDeviceProp deviceProps[4];
-  for (int i = 0; i < deviceCount; i++) {
-    cudaGetDeviceProperties(&deviceProps[i], i);
-  }
-
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
     for (size_t p = 0; p < n_prompt; p++) { // TODO: batching
