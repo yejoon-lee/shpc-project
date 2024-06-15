@@ -51,7 +51,7 @@ void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
   cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice);
 
   dim3 blockDim(16, 1, 16);
-  dim3 gridDim(DIV_CEIL(s, blockDim.x), DIV_CEIL(B, blockDim.y), DIV_CEIL(H, blockDim.z));
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H, blockDim.z));
 
   token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, B, s, H);
 
