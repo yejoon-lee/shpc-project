@@ -11,13 +11,14 @@ using std::vector;
 /* Elementwise operations */
 void gelu(Tensor *inout);
 void add(Tensor *inout, Tensor *x);
-void add_cuda(Tensor *inout, Tensor *x);
+void add_batch(Tensor *inout, Tensor *x);
 void scaling(Tensor *inout, float scale);
 
 /* Matmul operations */
 void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out);
-void matmul(Tensor *in1, Tensor *in2, Tensor *out);
-void matmul_cuda(Tensor *in1, Tensor *in2, Tensor *out);
+void matmul_attnscore(Tensor *in1, Tensor *in2, Tensor *out);
+void matmul_attnout(Tensor *in1, Tensor *in2, Tensor *out);
+void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out);
 
 /* Data movement operations */
 void copy(Tensor *in, Tensor *out);
