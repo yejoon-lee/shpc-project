@@ -92,7 +92,7 @@ void alloc_activations(size_t prompt_size) { // TODO: add batch dim
 
   ffn_proj_a = new Activation({prompt_size, 4 * HIDDEN_DIM});
 
-  mha_qkv_proj_a = new Activation({prompt_size, 3 * HIDDEN_DIM});
+  mha_qkv_proj_a = new Activation({BATCH_SIZE, prompt_size, 3 * HIDDEN_DIM});
   mha_out_a = new Activation({prompt_size, HIDDEN_DIM});
   mha_split_qkv_a = new Activation({3, prompt_size, HIDDEN_DIM});
   mha_split_head_a =
@@ -200,6 +200,12 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [seq_len, HIDDEN_DIM] ->
     [seq_len, 3*HIDDEN_DIM] */
   linear(in, attn_w, attn_b, mha_qkv_proj_a);
+  printf("Linear(QKV Projection)\n");
+  for (size_t d = 0; d < mha_qkv_proj_a->ndim; d++) {
+    printf("%zu", mha_qkv_proj_a->shape[d]);
+    printf("\n");
+  }
+  return;
 
   /* Split into Q, K, V:
     [seq_len, 3*HIDDEN_DIM] ->
@@ -271,10 +277,10 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
     printf("%zu", in->shape[d]);
     printf("\n");
   }
-  return;
 
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
+  return;
 
   /* Add Residual */
   add(mha_out_a, residual_a);
