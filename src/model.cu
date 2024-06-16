@@ -15,7 +15,7 @@ Parameter *mlp2_b[NUM_LAYER], *mlp2_w[NUM_LAYER];
 Parameter *ln_f_b, *ln_f_g;
 Parameter *wpe, *wte;
 
-#define BATCH_SIZE 64
+#define BATCH_SIZE 256
 
 void alloc_and_set_parameters(float *param) {
   size_t pos = 0;

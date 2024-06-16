@@ -709,7 +709,7 @@ void top1_sampling(Tensor *in, int *next_token_ids) {
   CHECK_CUDA(cudaMalloc(&next_token_ids_d, B * sizeof(int)));
 
   // Define grid and block dimensions
-  dim3 blockDim(64);
+  dim3 blockDim(256);
   dim3 gridDim(DIV_CEIL(B, blockDim.x));
 
   // Launch the kernel
