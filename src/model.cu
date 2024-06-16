@@ -407,6 +407,8 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
     /* Outer loop: generate tokens for each prompt */
     for (size_t b_strt = 0; b_strt < n_prompt; b_strt += BATCH_SIZE) { 
       // for any given prompt, prompt idx = b_strt + p
+      printf("\nPrompt %zu~%zu\n", b_strt, b_strt + BATCH_SIZE - 1);
+
       int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
@@ -419,6 +421,8 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
       /* Inner loop: generate next token */
       for (size_t t = 0; t < n_token; t++) { // n_token = 8 (fixed)
+        printf("\nToken %zu", t);
+
         /* Initialize activations */
         alloc_activations(prompt_size);
 
@@ -469,12 +473,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         transpose(wte, wte_transposed_a);
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
-        // Print logit shape
-        printf("\nLogit: (");
-        for (size_t d = 0; d < logit_a->ndim; d++) {
-          printf("%zu, ", logit_a->shape[d]);
-        }
-        printf(")");
+        // DEBUG : Print logit shape
+        // printf("\nLogit: (");
+        // for (size_t d = 0; d < logit_a->ndim; d++) {
+        //   printf("%zu, ", logit_a->shape[d]);
+        // }
+        // printf(")");
 
         /* Greedy sampling (only last timestep is considered) */
         int *next_token_ids = (int *)malloc(BATCH_SIZE * sizeof(int));
@@ -517,7 +521,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
     // for (size_t t = 0; t < n_token; t++) {
     //   printf("%d ", output[(b_strt + 16) * n_token + t]);
     // }
-    break;
+    // break;
     }
   }
 }
