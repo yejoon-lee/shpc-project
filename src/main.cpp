@@ -230,12 +230,6 @@ int main(int argc, char **argv) {
       fprintf(stdout, "Validation...");
 
       int *answer = (int *) read_binary(answer_fname, NULL);
-
-      printf("\nAnswer:\n");
-      for (size_t i = 0; i < num_generate_token; i++) {
-        printf("%d ", answer[16 * num_generate_token + i]);
-      }
-      
       int ret = validate(output, answer, num_prompts * num_generate_token);
       if (ret == -1) {
         fprintf(stdout, "PASS\n");
