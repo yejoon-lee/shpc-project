@@ -58,7 +58,7 @@ void token_pos_embedding(vector<int> *in, Tensor *wte, Tensor *wpe,
   CHECK_CUDA(cudaMalloc(&d_in, B*s * sizeof(int)));
   CHECK_CUDA(cudaMemcpy(d_in, concatenated_input.data(), B*s * sizeof(int), cudaMemcpyHostToDevice));
 
-  dim3 blockDim(16, 2, 16);
+  dim3 blockDim(16, 1, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H, blockDim.z));
 
   token_pos_embedding_kernel<<<gridDim, blockDim>>>(d_in, wte->buf, wpe->buf, out->buf, B, s, H);
@@ -320,7 +320,7 @@ void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
   size_t N = in2->shape[1]; // V
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 1, 32);
+  dim3 blockDim(16, 1, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
@@ -486,7 +486,7 @@ void add_batch(Tensor *inout, Tensor *x) {
   size_t N = inout->num_elem() / B;
 
   // Treat M*N as a single dimension
-  dim3 blockDim(64, 16);
+  dim3 blockDim(16, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(N, blockDim.y));
 
   add_batch_kernel<<<gridDim, blockDim>>>(inout->buf, x->buf, B, N);
@@ -516,7 +516,7 @@ void split_qkv(Tensor *in, Tensor *out) {
   size_t H = in->shape[2];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 4, 8);
+  dim3 blockDim(16, 2, 8);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H / 3, blockDim.z));
 
   // Launch the kernel
@@ -555,7 +555,7 @@ void split_head(Tensor *in, size_t n_head, Tensor *out) {
   size_t H = in->shape[3];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 4, 8);
+  dim3 blockDim(16, 2, 8);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), n_head);
 
   // Launch the kernel
@@ -677,7 +677,7 @@ void concat_head(Tensor *in, Tensor *out) {
 
 /* Greedy Max Sampling
  * @param  [in1]  in: [B, s, V]
- * @return [ret] out: [B]
+ * @param [out] next_token_ids: [B]
  * 'B' is the batch size.
  * 's' is the number of tokens in the prompt.
  * 'V' is the number of vocabulary.
