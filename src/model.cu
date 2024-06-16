@@ -357,13 +357,18 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
-    for (size_t p = 0; p < n_prompt; p+=BATCH_SIZE) { 
+    for (size_t p = 0; p < n_prompt; p += BATCH_SIZE) { 
       int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
-      vector<int> input_prompt(prompt_size * BATCH_SIZE); // FIX: array of vectors
-      memcpy(input_prompt.data(), input + p * prompt_size, // FIX
-             prompt_size * BATCH_SIZE * sizeof(int));
+      vector<int> input_prompt[BATCH_SIZE];
+      for (size_t b = 0; b < BATCH_SIZE; b++) {
+        input_prompt[b].resize(prompt_size);
+        memcpy(input_prompt[b].data(), input + p * prompt_size + b * prompt_size,
+               prompt_size * sizeof(int));
+      }
+      // memcpy(input_prompt.data(), input + p * prompt_size, // FIX
+            //  prompt_size * BATCH_SIZE * sizeof(int));
 
       /* Inner loop: generate next token */
       for (size_t t = 0; t < n_token; t++) {
@@ -417,17 +422,18 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         int next_token_ids[BATCH_SIZE];
         top1_sampling(logit_a, next_token_ids);
         printf("Top1 Sampling\n");
-        for (size_t i = 0; i < BATCH_SIZE; i++) {
-          printf("%d", next_token_ids[i]);
-          printf("\n");
-        }
 
         /* Update input prompt and prompt size */ 
-        input_prompt.push_back(next_token_ids); // FIX: for loop
+        for (size_t b = 0; b < BATCH_SIZE; b++) {
+          input_prompt[b].push_back(next_token_ids[b]);
+        }
         prompt_size += 1;
 
         /* Store generated token to output */ 
-        output[p * n_token + t] = next_token_ids; // FIX: for loop
+        for (size_t b = 0; b < BATCH_SIZE; b++) {
+          output[(p * BATCH_SIZE + b) * n_token + t] = next_token_ids[b];
+        }
+        printf("Output\n");
 
         /* Finalize activations for next token generation */
         free_activations();

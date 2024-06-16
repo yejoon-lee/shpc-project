@@ -40,16 +40,23 @@ __global__ void token_pos_embedding_kernel(int *in, float *wte, float *wpe, floa
  * 's' is the number of tokens in the prompt.
  * 'H' is the hidden dimension.
  */
-void token_pos_embedding(vector<int> in, Tensor *wte, Tensor *wpe,
+void token_pos_embedding(vector<int> *in, Tensor *wte, Tensor *wpe,
                               Tensor *out, int prompt_size) {
   size_t s = prompt_size;
-  size_t B = in.size() / s;
+  size_t B = in->size();
   size_t H = wte->shape[1];
+
+  // Concatenate the input vectors into a single array
+  std::vector<int> concatenated_input;
+  concatenated_input.reserve(B * s);
+  for (size_t i = 0; i < B; ++i) {
+      concatenated_input.insert(concatenated_input.end(), in[i].begin(), in[i].end());
+  }
 
   // `in` is on the host, so we need to copy it to the device
   int *d_in;
   CHECK_CUDA(cudaMalloc(&d_in, B*s * sizeof(int)));
-  CHECK_CUDA(cudaMemcpy(d_in, in.data(), B*s * sizeof(int), cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemcpy(d_in, concatenated_input.data(), B*s * sizeof(int), cudaMemcpyHostToDevice));
 
   dim3 blockDim(16, 2, 16);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), DIV_CEIL(H, blockDim.z));

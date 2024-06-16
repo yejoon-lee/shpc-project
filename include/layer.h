@@ -30,7 +30,7 @@ void concat_head(Tensor *in, Tensor *out);
 void extract_qkv(Tensor *in, size_t head_idx, size_t n_head, Tensor *q,
                  Tensor *k, Tensor *v);
 void merge_head(Tensor *in, size_t head_idx, size_t n_head, Tensor *out);
-void token_pos_embedding(vector<int> in, Parameter *wte, Parameter *wpe,
+void token_pos_embedding(vector<int> *in, Parameter *wte, Parameter *wpe,
                          Tensor *out, int prompt_size);
 
 /* Other operations */
