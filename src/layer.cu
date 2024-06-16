@@ -320,7 +320,7 @@ void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
   size_t N = in2->shape[1]; // V
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 1, 16);
+  dim3 blockDim(2, 2, 64);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
