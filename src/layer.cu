@@ -4,6 +4,7 @@
 
 #include <cuda_runtime.h>
 #include <mpi.h>
+#include <omp.h>
 
 #define DIV_CEIL(a, b) (((a) + (b)-1) / (b))
 
@@ -668,23 +669,33 @@ void concat_head(Tensor *in, Tensor *out) {
 }
 
 /* Greedy Max Sampling
- * @param  [in1]  in: [s, V]
- * @return [ret] out: [1]
+ * @param  [in1]  in: [B, s, V]
+ * @return [ret] out: [B]
+ * 'B' is the batch size.
  * 's' is the number of tokens in the prompt.
  * 'V' is the number of vocabulary.
+ * Device -> Host
  */
-int top1_sampling(Tensor *in) {
-  size_t s = in->shape[0];
-  size_t V = in->shape[1];
+void top1_sampling(Tensor *in, int *next_token_ids) {
+  size_t B = in->shape[0];
+  size_t s = in->shape[1];
+  size_t V = in->shape[2];
 
-  int out = 0;
-  float max = -INFINITY;
-  for (size_t i = 0; i < V; i++) {
-    if (in->buf[(s - 1) * V + i] > max) {
-      max = in->buf[(s - 1) * V + i];
-      out = i;
+  // Memcpy from device to host
+  float *h_in = (float *)malloc(B * s * V * sizeof(float));
+  CHECK_CUDA(cudaMemcpy(h_in, in->buf, B * s * V * sizeof(float), cudaMemcpyDeviceToHost));
+
+  // Find the maximum value for each batch
+  // #pragma omp parallel for schedule(static)
+  for (size_t b = 0; b < B; b++) {
+    float max = -INFINITY;
+    int idx = 0;
+    for (size_t i = 0; i < V; i++) {
+      if (h_in[b * s * V + (s - 1) * V + i] > max) {
+        max = h_in[b * s * V + (s - 1) * V + i];
+        idx = i;
+      }
     }
+    next_token_ids[b] = idx;
   }
-
-  return out;
 }

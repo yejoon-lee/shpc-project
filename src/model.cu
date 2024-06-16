@@ -357,12 +357,12 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
-    for (size_t p = 0; p < n_prompt; p+=BATCH_SIZE) { // TODO: batching
+    for (size_t p = 0; p < n_prompt; p+=BATCH_SIZE) { 
       int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
-      vector<int> input_prompt(prompt_size * BATCH_SIZE);
-      memcpy(input_prompt.data(), input + p * prompt_size,
+      vector<int> input_prompt(prompt_size * BATCH_SIZE); // FIX: array of vectors
+      memcpy(input_prompt.data(), input + p * prompt_size, // FIX
              prompt_size * BATCH_SIZE * sizeof(int));
 
       /* Inner loop: generate next token */
@@ -406,22 +406,28 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         transpose(wte, wte_transposed_a);
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
-        /* Greedy sampling (only last timestep is considered) */
-        Tensor* logit_a_ = logit_a->cpu();
+        // Tensor* logit_a_ = logit_a->cpu();
         printf("Logit\n");
-        for (size_t d = 0; d < logit_a_->ndim; d++) {
-          printf("%zu", logit_a_->shape[d]);
+        for (size_t d = 0; d < logit_a->ndim; d++) {
+          printf("%zu", logit_a->shape[d]);
           printf("\n");
         }
 
-        int next_token_id = top1_sampling(logit_a_);
+        /* Greedy sampling (only last timestep is considered) */
+        int next_token_ids[BATCH_SIZE];
+        top1_sampling(logit_a, next_token_ids);
+        printf("Top1 Sampling\n");
+        for (size_t i = 0; i < BATCH_SIZE; i++) {
+          printf("%d", next_token_ids[i]);
+          printf("\n");
+        }
 
-        /* Update input prompt and prompt size */
-        input_prompt.push_back(next_token_id);
+        /* Update input prompt and prompt size */ 
+        input_prompt.push_back(next_token_ids); // FIX: for loop
         prompt_size += 1;
 
-        /* Store generated token to output */
-        output[p * n_token + t] = next_token_id;
+        /* Store generated token to output */ 
+        output[p * n_token + t] = next_token_ids; // FIX: for loop
 
         /* Finalize activations for next token generation */
         free_activations();

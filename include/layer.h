@@ -37,4 +37,4 @@ void token_pos_embedding(vector<int> in, Parameter *wte, Parameter *wpe,
 void softmax(Tensor *inout);
 void layer_norm(Tensor *inout, Tensor *gamma, Tensor *beta);
 void generate_mask(Tensor *inout);
-int top1_sampling(Tensor *in);
+void top1_sampling(Tensor *in, int *next_token_ids);
