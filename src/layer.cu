@@ -471,7 +471,7 @@ __global__ void add_batch_kernel(float *inout, float *x, size_t B, size_t N) {
   size_t i = blockIdx.y * blockDim.y + threadIdx.y;
 
   if (b < B && i < N) { 
-    inout[b * N + i] += x[b * N + i];
+    inout[b * N + i] += x[i];
     }
 }
 
