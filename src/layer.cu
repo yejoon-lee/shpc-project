@@ -214,7 +214,7 @@ void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
   size_t N = w->shape[1];
 
   // Define grid and block dimensions
-  dim3 blockDim(8, 8, 8);
+  dim3 blockDim(8, 2, 32);
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
