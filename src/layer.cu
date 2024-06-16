@@ -594,7 +594,7 @@ __global__ void add_batch_kernel(float *inout, float *x, size_t B, size_t N) {
  */
 void add_batch(Tensor *inout, Tensor *x) {
   size_t B = inout->shape[0];
-  size_t N = inout->num_elem() / B;
+  size_t N = inout->num_elem() / B; // s*s
 
   // Treat M*N as a single dimension
   dim3 blockDim(16, 16);
