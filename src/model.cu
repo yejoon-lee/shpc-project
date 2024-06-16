@@ -423,12 +423,10 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         alloc_activations(prompt_size);
 
         // DEBUG
-        if (t == 0) {
-          printf("\nInput prompt\n");
-          for (size_t i = 0; i < tokens_per_prompt; i++) {
-            printf("%d ", input_prompt[16][i]);
-          }
-        }
+        // printf("\nInput prompt\n");
+        // for (size_t i = 0; i < tokens_per_prompt; i++) {
+        //   printf("%d ", input_prompt[16][i]);
+        // }
 
         /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size, BATCH_SIZE);
@@ -509,16 +507,16 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         free(next_token_ids);
         // break;
       }
-    // print input_prompt[tokens_per_prompt]
-    printf("\nInput\n");
-    for (size_t i = tokens_per_prompt; i < input_prompt[16].size(); i++) {
-      printf("%d ", input_prompt[16][i]);
-    }
-    // print output[0]
-    printf("\nOutput\n");
-    for (size_t t = 0; t < n_token; t++) {
-      printf("%d ", output[(b_strt + 16) * n_token + t]);
-    }
+    
+    // DEBUG
+    // printf("\nOutput pushed to Input\n");
+    // for (size_t i = tokens_per_prompt; i < input_prompt[16].size(); i++) {
+    //   printf("%d ", input_prompt[16][i]);
+    // }
+    // printf("\nSaved Output\n");
+    // for (size_t t = 0; t < n_token; t++) {
+    //   printf("%d ", output[(b_strt + 16) * n_token + t]);
+    // }
     break;
     }
   }
