@@ -330,7 +330,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         transpose(wte, wte_transposed_a);
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
-        // Tensor* logit_a_ = logit_a->cpu();
+        // Print logit shape
         printf("Logit: (");
         for (size_t d = 0; d < logit_a->ndim; d++) {
           printf("%zu, ", logit_a->shape[d]);
@@ -338,7 +338,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         printf(")\n");
 
         /* Greedy sampling (only last timestep is considered) */
-        int next_token_ids[BATCH_SIZE];
+        int *next_token_ids = (int *)malloc(BATCH_SIZE * sizeof(int));
         top1_sampling(logit_a, next_token_ids);
 
         /* Update input prompt and prompt size */ 
@@ -354,6 +354,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
         /* Finalize activations for next token generation */
         free_activations();
+        free(next_token_ids);
       }
     // print input_prompt[tokens_per_prompt]
     for (size_t i = tokens_per_prompt; i < input_prompt[0].size(); i++) {

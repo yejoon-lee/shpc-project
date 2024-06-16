@@ -128,7 +128,7 @@ void softmax(Tensor *inout) {
     size_t H = inout->shape[2];  // actually equal to s (used on attention scores)
 
     // Define grid and block dimensions
-    dim3 blockDim(64, 16);
+    dim3 blockDim(32, 8);
     dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y));
 
     // Launch the kernel
@@ -705,4 +705,7 @@ void top1_sampling(Tensor *in, int *next_token_ids) {
     }
     next_token_ids[p] = idx;
   }
+
+  // Free the host memory
+  free(h_in);
 }
