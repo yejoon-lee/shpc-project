@@ -263,15 +263,16 @@ void linear_down(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
 // CUDA Kernel for linear
 __global__ void linear_qkv_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.z * blockDim.z + threadIdx.z;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (b < B && i < M && j < N) {
+    if (b < B && j < N) {
+      for (size_t i = 0; i < M; i++) {
         float sum = 0.0;
         for (size_t k = 0; k < K; k++) {
             sum += in[b * M * K + i * K + k] * W[k * N + j];
         }
         out[b * M * N + i * N + j] = sum + Bias[j];
+      }
     }
 }
 
@@ -283,13 +284,13 @@ __global__ void linear_qkv_kernel(float *in, float *W, float *Bias, float *out, 
  */
 void linear_qkv(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
   size_t B = in->shape[0];
-  size_t M = in->shape[1];
-  size_t K = in->shape[2];
-  size_t N = w->shape[1];
+  size_t M = in->shape[1]; // s
+  size_t K = in->shape[2]; // H
+  size_t N = w->shape[1]; // 3*H
 
   // Define grid and block dimensions
-  dim3 blockDim(8, 2, 32);
-  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+  dim3 blockDim(8, 64);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(N, blockDim.y));
 
   // Launch the kernel
   linear_qkv_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
