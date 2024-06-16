@@ -150,14 +150,14 @@ void ffn(Activation *in, Parameter *mlp1_w, Parameter *mlp1_b,
          Parameter *mlp2_w, Parameter *mlp2_b, Activation *out) {
   /* Projection Up:
     [seq_len, HIDDEN_DIM] -> [seq_len, 4*HIDDEN_DIM] */
-  linear(in, mlp1_w, mlp1_b, ffn_proj_a);
+  linear_up(in, mlp1_w, mlp1_b, ffn_proj_a);
 
   /* GELU */
   gelu(ffn_proj_a);
 
   /* Projection Down:
     [seq_len, 4*HIDDEN_DIM] -> [seq_len, HIDDEN_DIM] */
-  linear(ffn_proj_a, mlp2_w, mlp2_b, out);
+  linear_down(ffn_proj_a, mlp2_w, mlp2_b, out);
 }
 
 /* Attention
@@ -245,7 +245,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
   /* QKV projection:
     [seq_len, HIDDEN_DIM] ->
     [seq_len, 3*HIDDEN_DIM] */
-  linear(in, attn_w, attn_b, mha_qkv_proj_a);
+  linear_qkv(in, attn_w, attn_b, mha_qkv_proj_a);
 
   /* Split into Q, K, V:
     [seq_len, 3*HIDDEN_DIM] ->
@@ -331,7 +331,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* OUT projection:
     [seq_len, HIDDEN_DIM] -> [seq_len, HI DDEN_DIM] */
-  linear(mha_concat_head_a, proj_w, proj_b, out);
+  linear_out(mha_concat_head_a, proj_w, proj_b, out);
 }
 
 /* Transformer Block
@@ -470,7 +470,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         layer_norm(embd_a, ln_f_g, ln_f_b);
 
         /* Projection to vocab. dimension */
-        transpose(wte, wte_transposed_a);
+        transpose(wte, wte_transposed_a); // OPTION: pad V
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
         // DEBUG : Print logit shape

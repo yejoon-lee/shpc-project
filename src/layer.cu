@@ -187,7 +187,7 @@ void layer_norm(Tensor *inout, Tensor *gamma, Tensor *beta) {
 }
 
 // CUDA Kernel for linear
-__global__ void linear_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
+__global__ void linear_up_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
     int i = blockIdx.y * blockDim.y + threadIdx.y;
     int j = blockIdx.z * blockDim.z + threadIdx.z;
@@ -201,13 +201,13 @@ __global__ void linear_kernel(float *in, float *W, float *Bias, float *out, size
     }
 }
 
-/* Linear
+/* Linear Projection (Up)
  * @param [in1]  in: [B, M, K]
  * @param [in2]   w: [K, N]
  * @param [in3]   b: [N]
  * @param [out] out: [B, M, N]
  */
-void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
+void linear_up(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
   size_t B = in->shape[0];
   size_t M = in->shape[1];
   size_t K = in->shape[2];
@@ -218,7 +218,115 @@ void linear(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
   dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
 
   // Launch the kernel
-  linear_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
+  linear_up_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for linear
+__global__ void linear_down_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        float sum = 0.0;
+        for (size_t k = 0; k < K; k++) {
+            sum += in[b * M * K + i * K + k] * W[k * N + j];
+        }
+        out[b * M * N + i * N + j] = sum + Bias[j];
+    }
+}
+
+/* Linear Projection (Down)
+ * @param [in1]  in: [B, M, K]
+ * @param [in2]   w: [K, N]
+ * @param [in3]   b: [N]
+ * @param [out] out: [B, M, N]
+ */
+void linear_down(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
+  size_t B = in->shape[0];
+  size_t M = in->shape[1];
+  size_t K = in->shape[2];
+  size_t N = w->shape[1];
+
+  // Define grid and block dimensions
+  dim3 blockDim(8, 2, 32);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+
+  // Launch the kernel
+  linear_down_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for linear
+__global__ void linear_qkv_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        float sum = 0.0;
+        for (size_t k = 0; k < K; k++) {
+            sum += in[b * M * K + i * K + k] * W[k * N + j];
+        }
+        out[b * M * N + i * N + j] = sum + Bias[j];
+    }
+}
+
+/* Linear (QKV)
+ * @param [in1]  in: [B, M, K]
+ * @param [in2]   w: [K, N]
+ * @param [in3]   b: [N]
+ * @param [out] out: [B, M, N]
+ */
+void linear_qkv(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
+  size_t B = in->shape[0];
+  size_t M = in->shape[1];
+  size_t K = in->shape[2];
+  size_t N = w->shape[1];
+
+  // Define grid and block dimensions
+  dim3 blockDim(8, 2, 32);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+
+  // Launch the kernel
+  linear_qkv_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
+  CHECK_CUDA(cudaGetLastError());
+}
+
+// CUDA Kernel for linear
+__global__ void linear_out_kernel(float *in, float *W, float *Bias, float *out, size_t B, size_t M, size_t K, size_t N) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.z * blockDim.z + threadIdx.z;
+
+    if (b < B && i < M && j < N) {
+        float sum = 0.0;
+        for (size_t k = 0; k < K; k++) {
+            sum += in[b * M * K + i * K + k] * W[k * N + j];
+        }
+        out[b * M * N + i * N + j] = sum + Bias[j];
+    }
+}
+
+/* Linear (Output)
+ * @param [in1]  in: [B, M, K]
+ * @param [in2]   w: [K, N]
+ * @param [in3]   b: [N]
+ * @param [out] out: [B, M, N]
+ */
+void linear_out(Tensor *in, Tensor *w, Tensor *b, Tensor *out) {
+  size_t B = in->shape[0];
+  size_t M = in->shape[1];
+  size_t K = in->shape[2];
+  size_t N = w->shape[1];
+
+  // Define grid and block dimensions
+  dim3 blockDim(8, 2, 32);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+
+  // Launch the kernel
+  linear_out_kernel<<<gridDim, blockDim>>>(in->buf, w->buf, b->buf, out->buf, B, M, K, N);
   CHECK_CUDA(cudaGetLastError());
 }
 
