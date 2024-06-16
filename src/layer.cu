@@ -675,6 +675,22 @@ void concat_head(Tensor *in, Tensor *out) {
   CHECK_CUDA(cudaGetLastError());
 }
 
+__global__ void top1_sampling_kernel(float *in, int *next_token_ids, size_t B, size_t s, size_t V) {
+    int b = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (b < B) {
+        float max = -INFINITY;
+        int idx = 0;
+        for (size_t i = 0; i < V; i++) {
+            if (in[b * s * V + (s - 1) * V + i] > max) {
+                max = in[b * s * V + (s - 1) * V + i];
+                idx = i;
+            }
+        }
+        next_token_ids[b] = idx;
+    }
+}
+
 /* Greedy Max Sampling
  * @param  [in1]  in: [B, s, V]
  * @param [out] next_token_ids: [B]
@@ -688,24 +704,20 @@ void top1_sampling(Tensor *in, int *next_token_ids) {
   size_t s = in->shape[1];
   size_t V = in->shape[2];
 
-  // Memcpy from device to host
-  float *h_in = (float *)malloc(B * s * V * sizeof(float));
-  CHECK_CUDA(cudaMemcpy(h_in, in->buf, B * s * V * sizeof(float), cudaMemcpyDeviceToHost));
+  // cudaMalloc next_token_ids
+  int *next_token_ids_d;
+  CHECK_CUDA(cudaMalloc(&next_token_ids_d, B * sizeof(int)));
 
-  // Find the maximum value for each batch
-  // #pragma omp parallel for schedule(static)
-  for (size_t p = 0; p < B; p++) {
-    float max = -INFINITY;
-    int idx = 0;
-    for (size_t i = 0; i < V; i++) {
-      if (h_in[p * s * V + (s - 1) * V + i] > max) {
-        max = h_in[p * s * V + (s - 1) * V + i];
-        idx = i;
-      }
-    }
-    next_token_ids[p] = idx;
-  }
+  // Define grid and block dimensions
+  dim3 blockDim(64);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x));
 
-  // Free the host memory
-  free(h_in);
+  // Launch the kernel
+  top1_sampling_kernel<<<gridDim, blockDim>>>(in->buf, next_token_ids_d, B, s, V);
+
+  // Copy the result back to the host
+  CHECK_CUDA(cudaMemcpy(next_token_ids, next_token_ids_d, B * sizeof(int), cudaMemcpyDeviceToHost));
+
+  // Free the device memory
+  CHECK_CUDA(cudaFree(next_token_ids_d));
 }
