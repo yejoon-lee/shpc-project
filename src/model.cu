@@ -176,30 +176,10 @@ void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
   /* Scaling */
   scaling(attn_score_a, (1.0 / sqrt(k->shape[1])));
 
-  /* Masking */
-  for (size_t i = 0; i < mask->ndim; i++) {
-    printf("Mask: %zu", mask->shape[i]);
-    printf("\n");
-  }
-  for (size_t i = 0; i < attn_score_a->ndim; i++) {
-    printf("Attn score: %zu", attn_score_a->shape[i]);
-    printf("\n");
-  }
-
   add_batch(attn_score_a, mask);
-  printf("Before softmax\n");
-  for (size_t d = 0; d < attn_score_a->ndim; d++) {
-    printf("%zu", attn_score_a->shape[d]);
-    printf("\n");
-  }
 
   /* Softmax */
   softmax(attn_score_a);
-  printf("After softmax\n");
-  for (size_t d = 0; d < attn_score_a->ndim; d++) {
-    printf("%zu", attn_score_a->shape[d]);
-    printf("\n");
-  }
 
   /* Attention score @ v */
   matmul_attnout(attn_score_a, v, out);
@@ -219,31 +199,16 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [seq_len, HIDDEN_DIM] ->
     [seq_len, 3*HIDDEN_DIM] */
   linear(in, attn_w, attn_b, mha_qkv_proj_a);
-  printf("Linear(QKV Projection)\n");
-  for (size_t d = 0; d < mha_qkv_proj_a->ndim; d++) {
-    printf("%zu", mha_qkv_proj_a->shape[d]);
-    printf("\n");
-  }
 
   /* Split into Q, K, V:
     [seq_len, 3*HIDDEN_DIM] ->
     [3, seq_len, HIDDEN_DIM] */
   split_qkv(mha_qkv_proj_a, mha_split_qkv_a);
-  printf("Split QKV\n");
-  for (size_t d = 0; d < mha_split_qkv_a->ndim; d++) {
-    printf("%zu", mha_split_qkv_a->shape[d]);
-    printf("\n");
-  }
 
   /* Split into multiple heads:
     [3, seq_len, HIDDEN_DIM] ->
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
-  printf("Split Head\n");
-  for (size_t d = 0; d < mha_split_head_a->ndim; d++) {
-    printf("%zu", mha_split_head_a->shape[d]);
-    printf("\n");
-  }
 
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);
@@ -254,40 +219,20 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
   for (size_t idx = 0; idx < NUM_HEAD; idx++) {
     /* Extract Q, K, V from qkv_head */
     extract_qkv(mha_split_head_a, idx, NUM_HEAD, mha_q_a, mha_k_a, mha_v_a);
-    printf("Extract QKV\n");
-    for (size_t d = 0; d < mha_q_a->ndim; d++) {
-      printf("%zu", mha_q_a->shape[d]);
-      printf("\n");
-    }
 
     /* Attention */
     attention(mha_q_a, mha_k_a, mha_v_a, mha_mask_a, mha_attn_out_a);
-    printf("Attention\n");
-    for (size_t d = 0; d < mha_attn_out_a->ndim; d++) {
-      printf("%zu", mha_attn_out_a->shape[d]);
-      printf("\n");
-    }
 
     /* Merge each head's attn output
       [seq_len, HIDDEN_DIM/NUM_HEAD] ->
       [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
     merge_head(mha_attn_out_a, idx, NUM_HEAD, mha_merge_head_a);
-    printf("Merge Head\n");
-    for (size_t d = 0; d < mha_merge_head_a->ndim; d++) {
-      printf("%zu", mha_merge_head_a->shape[d]);
-      printf("\n");
-    }
   }
 
   /* Concat each heads:
     [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] ->
     [seq_len, HIDDEN_DIM] */
   concat_head(mha_merge_head_a, mha_concat_head_a);
-  printf("Concat Head\n");
-  for (size_t d = 0; d < mha_concat_head_a->ndim; d++) {
-    printf("%zu", mha_concat_head_a->shape[d]);
-    printf("\n");
-  }
 
   /* OUT projection:
     [seq_len, HIDDEN_DIM] -> [seq_len, HIDDEN_DIM] */
@@ -320,19 +265,9 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
 
   /* Layer Normalization */
   layer_norm(in, ln_1_g, ln_1_b);
-  printf("Layer Normalization\n");
-  for (size_t d = 0; d < in->ndim; d++) {
-    printf("%zu", in->shape[d]);
-    printf("\n");
-  }
 
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
-  printf("Masked Multi-Head Self-Attention\n");
-  for (size_t d = 0; d < mha_out_a->ndim; d++) {
-    printf("%zu", mha_out_a->shape[d]);
-    printf("\n");
-  }
 
   /* Add Residual */
   add(mha_out_a, residual_a);
@@ -357,31 +292,25 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
   if (mpi_rank == 0) {
     /* Outer loop: generate tokens for each prompt */
-    for (size_t p = 0; p < n_prompt; p += BATCH_SIZE) { 
+    for (size_t b_strt = 0; b_strt < n_prompt; b_strt += BATCH_SIZE) { 
+      // for any given prompt, prompt idx = b_strt + p
       int prompt_size = tokens_per_prompt; // fixed to 16
 
       /* Initialize input prompt */
       vector<int> input_prompt[BATCH_SIZE];
-      for (size_t b = 0; b < BATCH_SIZE; b++) {
-        input_prompt[b].resize(prompt_size);
-        memcpy(input_prompt[b].data(), input + p * prompt_size + b * prompt_size,
+      for (size_t p = 0; p < BATCH_SIZE; p++) {
+        input_prompt[p].resize(prompt_size);
+        memcpy(input_prompt[p].data(), input + (b_strt + p) * prompt_size,
                prompt_size * sizeof(int));
       }
-      // memcpy(input_prompt.data(), input + p * prompt_size, // FIX
-            //  prompt_size * BATCH_SIZE * sizeof(int));
 
       /* Inner loop: generate next token */
-      for (size_t t = 0; t < n_token; t++) {
+      for (size_t t = 0; t < n_token; t++) { // n_token = 8 (fixed)
         /* Initialize activations */
         alloc_activations(prompt_size);
 
         /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size);
-        printf("\nToken + Positional Embedding\n");
-        for (size_t d = 0; d < embd_a->ndim; d++) {
-          printf("%zu", embd_a->shape[d]);
-          printf("\n");
-        }
 
         /* Forward path of Transformer blocks */
         for (size_t l = 0; l < NUM_LAYER; l++) {
@@ -393,52 +322,49 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
         }
-        printf("Forward path of Transformer blocks\n");
-        for (size_t d = 0; d < embd_a->ndim; d++) {
-          printf("%zu", embd_a->shape[d]);
-          printf("\n");
-        }
 
         /* Final Layer Normalization */
         layer_norm(embd_a, ln_f_g, ln_f_b);
-        printf("Final Layer Normalization\n");
-        for (size_t d = 0; d < embd_a->ndim; d++) {
-          printf("%zu", embd_a->shape[d]);
-          printf("\n");
-        }
 
         /* Projection to vocab. dimension */
         transpose(wte, wte_transposed_a);
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
         // Tensor* logit_a_ = logit_a->cpu();
-        printf("Logit\n");
+        printf("Logit: (");
         for (size_t d = 0; d < logit_a->ndim; d++) {
-          printf("%zu", logit_a->shape[d]);
-          printf("\n");
+          printf("%zu, ", logit_a->shape[d]);
         }
+        printf(")\n");
 
         /* Greedy sampling (only last timestep is considered) */
         int next_token_ids[BATCH_SIZE];
         top1_sampling(logit_a, next_token_ids);
-        printf("Top1 Sampling\n");
 
         /* Update input prompt and prompt size */ 
-        for (size_t b = 0; b < BATCH_SIZE; b++) {
-          input_prompt[b].push_back(next_token_ids[b]);
+        for (size_t p = 0; p < BATCH_SIZE; p++) {
+          input_prompt[p].push_back(next_token_ids[p]);
         }
         prompt_size += 1;
 
         /* Store generated token to output */ 
-        for (size_t b = 0; b < BATCH_SIZE; b++) {
-          output[(p * BATCH_SIZE + b) * n_token + t] = next_token_ids[b];
+        for (size_t p = 0; p < BATCH_SIZE; p++) {
+          output[(b_strt + p) * n_token + t] = next_token_ids[p];
         }
-        printf("Output\n");
 
         /* Finalize activations for next token generation */
         free_activations();
       }
-      break;
+    // print input_prompt[tokens_per_prompt]
+    for (size_t i = tokens_per_prompt; i < input_prompt[0].size(); i++) {
+      printf("%d ", input_prompt[0][i]);
+    }
+    // print output[0]
+    printf("\nOutput\n");
+    for (size_t t = 0; t < n_token; t++) {
+      printf("%d ", output[(b_strt + 0) * n_token + t]);
+    }
+    break;
     }
   }
 }

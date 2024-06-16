@@ -694,15 +694,15 @@ void top1_sampling(Tensor *in, int *next_token_ids) {
 
   // Find the maximum value for each batch
   // #pragma omp parallel for schedule(static)
-  for (size_t b = 0; b < B; b++) {
+  for (size_t p = 0; p < B; p++) {
     float max = -INFINITY;
     int idx = 0;
     for (size_t i = 0; i < V; i++) {
-      if (h_in[b * s * V + (s - 1) * V + i] > max) {
-        max = h_in[b * s * V + (s - 1) * V + i];
+      if (h_in[p * s * V + (s - 1) * V + i] > max) {
+        max = h_in[p * s * V + (s - 1) * V + i];
         idx = i;
       }
     }
-    next_token_ids[b] = idx;
+    next_token_ids[p] = idx;
   }
 }
