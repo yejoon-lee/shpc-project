@@ -257,14 +257,14 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
 
-  // // DEBUG -> CORRECT only for layer 1
+  // DEBUG
   // printf("\nSplit Head\n");
   // Tensor *mha_split_head_a_ = mha_split_head_a->cpu();
   // // B, 3, HEAD, S, H_
   // size_t s = mha_split_head_a_->shape[3];
   // size_t H = mha_split_head_a_->shape[4];
   // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", mha_split_head_a_->buf[(s-1) * H + d]);
+  //   printf("%f, ", mha_split_head_a_->buf[16 * s * H + (s-1) * H + d]);
   // }
 
   /* Generate mask to hide future inputs */
@@ -283,7 +283,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     // size_t s = mha_q_a_->shape[1];
     // size_t H = mha_q_a_->shape[2];
     // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_q_a_->buf[(s-1) * H + d]);
+    //   printf("%f, ", mha_q_a_->buf[16 * s * H + (s-1) * H + d]);
     // }
 
     /* Attention */
@@ -295,7 +295,7 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     // s = mha_attn_out_a_->shape[1];
     // H = mha_attn_out_a_->shape[2];
     // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_attn_out_a_->buf[(s-1) * H + d]);
+    //   printf("%f, ", mha_attn_out_a_->buf[16 * s * H + (s-1) * H + d]);
     // }
 
     /* Merge each head's attn output
@@ -306,11 +306,13 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     // DEBUG
     // printf("\nMerge Head\n");
     // Tensor *mha_merge_head_a_ = mha_merge_head_a->cpu();
+    // size_t num_head = mha_merge_head_a_->shape[1];
     // s = mha_merge_head_a_->shape[2];
     // H = mha_merge_head_a_->shape[3];
     // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_merge_head_a_->buf[(s-1) * H + d]);
+    //   printf("%f, ", mha_merge_head_a_->buf[16 * num_head * s * H + (s-1) * H + d]);
     // }
+    // break;
   }
 
   /* Concat each heads:
@@ -359,16 +361,25 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
   /* Layer Normalization */
   layer_norm(in, ln_1_g, ln_1_b);
 
+  // DEBUG
+  // printf("\nLayer Norm\n");
+  // Tensor *in_ = in->cpu();
+  // size_t s = in_->shape[1];
+  // size_t H = in_->shape[2];
+  // for (size_t d = 0; d < 10; d++){
+  //   printf("%f, ", in_->buf[16 * s * H + (s-1) * H + d]);
+  // }
+
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
   
-  // // DEBUG -> INCORRECT
+  // DEBUG
   // printf("\nMHA\n");
   // Tensor *mha_out_a_ = mha_out_a->cpu();
-  // size_t s = mha_out_a_->shape[1];
-  // size_t H = mha_out_a_->shape[2];
+  // s = mha_out_a_->shape[1];
+  // H = mha_out_a_->shape[2];
   // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", mha_out_a_->buf[(s-1) * H + d]);
+  //   printf("%f, ", mha_out_a_->buf[16 * s * H + (s-1) * H + d]);
   // }
 
   /* Add Residual */
@@ -411,8 +422,25 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Initialize activations */
         alloc_activations(prompt_size);
 
+        // DEBUG
+        if (t == 0) {
+          printf("\nInput prompt\n");
+          for (size_t i = 0; i < tokens_per_prompt; i++) {
+            printf("%d ", input_prompt[16][i]);
+          }
+        }
+
         /* Token + Positional Embedding */
-        token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size);
+        token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size, BATCH_SIZE);
+
+        // DEBUG
+        // printf("\nToken + Positional Embedding\n");
+        // Tensor *embd_a_ = embd_a->cpu();
+        // size_t s = embd_a_->shape[1];
+        // size_t H = embd_a_->shape[2];
+        // for (size_t d = 0; d < 10; d++) {
+        //   printf("%f, ", embd_a_->buf[16 * s * H + (s-1) * H + d]);
+        // }
 
         /* Forward path of Transformer blocks */
         for (size_t l = 0; l < NUM_LAYER; l++) {
@@ -423,16 +451,17 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
+          // break;
         }
 
-        // DEBUG -> INCORRECT
-        // printf("Transformer Block for token %zu\n", t);
-        // Tensor *embd_a_ = embd_a->cpu();
+        // DEBUG
+        // printf("\nTransformer Block for token %zu\n", t);
+        // embd_a_ = embd_a->cpu();
 
-        // size_t s = embd_a_->shape[1];
-        // size_t H = embd_a_->shape[2];
-        // for (size_t d = 0; d < 10; d++){
-        //   printf("%f, ", embd_a_->buf[(s-1) * H + d]);
+        // s = embd_a_->shape[1];
+        // H = embd_a_->shape[2];
+        // for (size_t d = 0; d < 10; d++) {
+        //   printf("%f, ", embd_a_->buf[16 * s * H + (s-1) * H + d]);
         // }
 
         /* Final Layer Normalization */
@@ -478,6 +507,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Finalize activations for next token generation */
         free_activations();
         free(next_token_ids);
+        // break;
       }
     // print input_prompt[tokens_per_prompt]
     printf("\nInput\n");

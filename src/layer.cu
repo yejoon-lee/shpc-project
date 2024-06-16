@@ -41,9 +41,9 @@ __global__ void token_pos_embedding_kernel(int *in, float *wte, float *wpe, floa
  * 'H' is the hidden dimension.
  */
 void token_pos_embedding(vector<int> *in, Tensor *wte, Tensor *wpe,
-                              Tensor *out, int prompt_size) {
+                              Tensor *out, int prompt_size, int batch_size) {
   size_t s = prompt_size;
-  size_t B = in->size();
+  size_t B = batch_size;
   size_t H = wte->shape[1];
 
   // Concatenate the input vectors into a single array
