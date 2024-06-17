@@ -639,18 +639,28 @@ void split_qkv(Tensor *in, Tensor *out) {
 // CUDA Kernel for split_head
 __global__ void split_head_kernel(float *in, float *out, size_t B, size_t s, size_t H, size_t n_head) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
-    int j = blockIdx.y * blockDim.y + threadIdx.y;
-    int k = blockIdx.z * blockDim.z + threadIdx.z;
+    int l = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (b < B && j < n_head && k < s) {
-      for (size_t l = 0; l < H / n_head; l++) {
-        // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
-        // i = 0,1,2
-        out[(b * 3 * s * H) + 0 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 0 * s * H + k * H + j * H / n_head + l];
-        out[(b * 3 * s * H) + 1 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 1 * s * H + k * H + j * H / n_head + l];
-        out[(b * 3 * s * H) + 2 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 2 * s * H + k * H + j * H / n_head + l];
-      }      
+    if (b < B && l < H / n_head) {
+      for (size_t j = 0; j < n_head; j++) {
+        for (size_t k = 0; k < s; k++) {
+          // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
+          out[(b * 3 * s * H) + 0 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 0 * s * H + k * H + j * H / n_head + l];
+          out[(b * 3 * s * H) + 1 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 1 * s * H + k * H + j * H / n_head + l];
+          out[(b * 3 * s * H) + 2 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 2 * s * H + k * H + j * H / n_head + l];
+        }
+      }
     }
+
+    // if (b < B && j < n_head && k < s) {
+    //   for (size_t l = 0; l < H / n_head; l++) {
+    //     // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
+    //     // i = 0,1,2
+    //     out[(b * 3 * s * H) + 0 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 0 * s * H + k * H + j * H / n_head + l];
+    //     out[(b * 3 * s * H) + 1 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 1 * s * H + k * H + j * H / n_head + l];
+    //     out[(b * 3 * s * H) + 2 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 2 * s * H + k * H + j * H / n_head + l];
+    //   }      
+    // }
 }
 
 /* Split into heads
@@ -667,8 +677,8 @@ void split_head(Tensor *in, size_t n_head, Tensor *out) {
   size_t H = in->shape[3];
 
   // Define grid and block dimensions
-  dim3 blockDim(16, 2, 8);
-  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(s, blockDim.y), n_head);
+  dim3 blockDim(16, 16);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(H, blockDim.y));
 
   // Launch the kernel
   split_head_kernel<<<gridDim, blockDim>>>(in->buf, out->buf, B, s, H, n_head);
