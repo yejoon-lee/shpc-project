@@ -643,13 +643,13 @@ __global__ void split_head_kernel(float *in, float *out, size_t B, size_t s, siz
     int k = blockIdx.z * blockDim.z + threadIdx.z;
 
     if (b < B && j < n_head && k < s) {
-      for (size_t i = 0; i < 3; i++) {
-        for (size_t l = 0; l < H / n_head; l++) {
-            // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
-            out[(b * 3 * s * H) + i * s * H + j * s * H / n_head + k * H / n_head + l] =
-                in[(b * 3 * s * H) + i * s * H + k * H + j * H / n_head + l];
-        }
-      }
+      for (size_t l = 0; l < H / n_head; l++) {
+        // out[b, i, j, k, l] = in[b, i, k, j * (H / n_head) + l]
+        // i = 0,1,2
+        out[(b * 3 * s * H) + 0 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 0 * s * H + k * H + j * H / n_head + l];
+        out[(b * 3 * s * H) + 1 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 1 * s * H + k * H + j * H / n_head + l];
+        out[(b * 3 * s * H) + 2 * s * H + j * s * H / n_head + k * H / n_head + l] = in[(b * 3 * s * H) + 2 * s * H + k * H + j * H / n_head + l];
+      }      
     }
 }
 
