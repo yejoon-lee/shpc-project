@@ -15,7 +15,7 @@ Parameter *mlp2_b[NUM_LAYER], *mlp2_w[NUM_LAYER];
 Parameter *ln_f_b, *ln_f_g;
 Parameter *wpe, *wte;
 
-#define BATCH_SIZE 256
+#define BATCH_SIZE 128
 
 void alloc_and_set_parameters(float *param) {
   size_t pos = 0;
@@ -309,7 +309,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
       /* Inner loop: generate next token */
       for (size_t t = 0; t < n_token; t++) { // n_token = 8 (fixed)
-        printf("\nToken %zu", t);
+        printf("Token %zu\n", t);
 
         /* Initialize activations */
         alloc_activations(prompt_size);
