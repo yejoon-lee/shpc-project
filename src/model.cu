@@ -172,61 +172,15 @@ void attention(Activation *q, Activation *k, Activation *v, Activation *mask,
   /* Get Attention score by q @ k */
   transpose_batch(k, k_transposed_a);
 
-  // DEUBG
-  // printf("\nKey Transpose\n");
-  // Tensor *k_transposed_a_ = k_transposed_a->cpu();
-  // size_t H = k_transposed_a_->shape[1];
-  // size_t s = k_transposed_a_->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", k_transposed_a_->buf[(H-1) * s + d]);
-  // }
-
-
   matmul_attnscore(q, k_transposed_a, attn_score_a);
-
-  // DEBUG
-  // printf("\nAttention Score\n");
-  // Tensor *attn_score_a_ = attn_score_a->cpu();
-  // s = attn_score_a_->shape[1];
-  // s = attn_score_a_->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", attn_score_a_->buf[(s-1) * s + d]);
-  // }
 
   /* Scaling */
   scaling(attn_score_a, (1.0 / sqrt(k->shape[2])));
 
-  // DEBUG
-  // printf("\nScaling\n");
-  // Tensor *attn_score_a_scaling = attn_score_a->cpu();
-  // s = attn_score_a_scaling->shape[1];
-  // s = attn_score_a_scaling->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", attn_score_a_scaling->buf[(s-1) * s + d]);
-  // }
-
   add_batch(attn_score_a, mask);
-
-  // DEUBG
-  // printf("\nAdd Mask\n");
-  // Tensor *attn_score_a_mask = attn_score_a->cpu();
-  // s = attn_score_a_mask->shape[1];
-  // s = attn_score_a_mask->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", attn_score_a_mask->buf[(s-1) * s + d]);
-  // }
 
   /* Softmax */
   softmax(attn_score_a);
-
-  // DEBUG
-  // printf("\nSoftmax\n");
-  // Tensor *attn_score_a_softmax = attn_score_a->cpu();
-  // s = attn_score_a_softmax->shape[1];
-  // s = attn_score_a_softmax->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", attn_score_a_softmax->buf[(s-1) * s + d]);
-  // }
 
   /* Attention score @ v */
   matmul_attnout(attn_score_a, v, out);
@@ -257,16 +211,6 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     [3, NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
   split_head(mha_split_qkv_a, NUM_HEAD, mha_split_head_a);
 
-  // DEBUG
-  // printf("\nSplit Head\n");
-  // Tensor *mha_split_head_a_ = mha_split_head_a->cpu();
-  // // B, 3, HEAD, S, H_
-  // size_t s = mha_split_head_a_->shape[3];
-  // size_t H = mha_split_head_a_->shape[4];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", mha_split_head_a_->buf[16 * s * H + (s-1) * H + d]);
-  // }
-
   /* Generate mask to hide future inputs */
   generate_mask(mha_mask_a);
 
@@ -277,57 +221,19 @@ void mha(Activation *in, Parameter *attn_b, Parameter *attn_w,
     /* Extract Q, K, V from qkv_head */
     extract_qkv(mha_split_head_a, idx, NUM_HEAD, mha_q_a, mha_k_a, mha_v_a);
 
-    // DEBUG
-    // printf("\nExtract QKV\n");
-    // Tensor *mha_q_a_ = mha_q_a->cpu();
-    // size_t s = mha_q_a_->shape[1];
-    // size_t H = mha_q_a_->shape[2];
-    // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_q_a_->buf[16 * s * H + (s-1) * H + d]);
-    // }
-
     /* Attention */
     attention(mha_q_a, mha_k_a, mha_v_a, mha_mask_a, mha_attn_out_a);
-
-    // DEBUG
-    // printf("\nAttention\n");
-    // Tensor *mha_attn_out_a_ = mha_attn_out_a->cpu();
-    // s = mha_attn_out_a_->shape[1];
-    // H = mha_attn_out_a_->shape[2];
-    // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_attn_out_a_->buf[16 * s * H + (s-1) * H + d]);
-    // }
 
     /* Merge each head's attn output
       [seq_len, HIDDEN_DIM/NUM_HEAD] ->
       [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] */
     merge_head(mha_attn_out_a, idx, NUM_HEAD, mha_merge_head_a);
-
-    // DEBUG
-    // printf("\nMerge Head\n");
-    // Tensor *mha_merge_head_a_ = mha_merge_head_a->cpu();
-    // size_t num_head = mha_merge_head_a_->shape[1];
-    // s = mha_merge_head_a_->shape[2];
-    // H = mha_merge_head_a_->shape[3];
-    // for (size_t d = 0; d < 10; d++){
-    //   printf("%f, ", mha_merge_head_a_->buf[16 * num_head * s * H + (s-1) * H + d]);
-    // }
-    // break;
   }
 
   /* Concat each heads:
     [NUM_HEAD, seq_len, HIDDEN_DIM/NUM_HEAD] ->
     [seq_len, HIDDEN_DIM] */
   concat_head(mha_merge_head_a, mha_concat_head_a);
-
-  // DEBUG
-  // printf("\nConcat Head\n");
-  // Tensor *mha_concat_head_a_ = mha_concat_head_a->cpu();
-  // size_t s = mha_concat_head_a_->shape[1];
-  // size_t H = mha_concat_head_a_->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", mha_concat_head_a_->buf[(s-1) * H + d]);
-  // }
 
   /* OUT projection:
     [seq_len, HIDDEN_DIM] -> [seq_len, HI DDEN_DIM] */
@@ -361,27 +267,9 @@ void transformer_block(Activation *in, Parameter *attn_b, Parameter *attn_w,
   /* Layer Normalization */
   layer_norm(in, ln_1_g, ln_1_b);
 
-  // DEBUG
-  // printf("\nLayer Norm\n");
-  // Tensor *in_ = in->cpu();
-  // size_t s = in_->shape[1];
-  // size_t H = in_->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", in_->buf[16 * s * H + (s-1) * H + d]);
-  // }
-
   /* Masked Multi-Head Self-Attention */
   mha(in, attn_b, attn_w, proj_b, proj_w, mha_out_a);
   
-  // DEBUG
-  // printf("\nMHA\n");
-  // Tensor *mha_out_a_ = mha_out_a->cpu();
-  // s = mha_out_a_->shape[1];
-  // H = mha_out_a_->shape[2];
-  // for (size_t d = 0; d < 10; d++){
-  //   printf("%f, ", mha_out_a_->buf[16 * s * H + (s-1) * H + d]);
-  // }
-
   /* Add Residual */
   add(mha_out_a, residual_a);
 
@@ -426,23 +314,8 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Initialize activations */
         alloc_activations(prompt_size);
 
-        // DEBUG
-        // printf("\nInput prompt\n");
-        // for (size_t i = 0; i < tokens_per_prompt; i++) {
-        //   printf("%d ", input_prompt[16][i]);
-        // }
-
         /* Token + Positional Embedding */
         token_pos_embedding(input_prompt, wte, wpe, embd_a, prompt_size, BATCH_SIZE);
-
-        // DEBUG
-        // printf("\nToken + Positional Embedding\n");
-        // Tensor *embd_a_ = embd_a->cpu();
-        // size_t s = embd_a_->shape[1];
-        // size_t H = embd_a_->shape[2];
-        // for (size_t d = 0; d < 10; d++) {
-        //   printf("%f, ", embd_a_->buf[16 * s * H + (s-1) * H + d]);
-        // }
 
         /* Forward path of Transformer blocks */
         for (size_t l = 0; l < NUM_LAYER; l++) {
@@ -453,18 +326,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
 
           /* Copy output to embd_a for next block */
           copy(transformer_block_a, embd_a);
-          // break;
         }
-
-        // DEBUG
-        // printf("\nTransformer Block for token %zu\n", t);
-        // embd_a_ = embd_a->cpu();
-
-        // s = embd_a_->shape[1];
-        // H = embd_a_->shape[2];
-        // for (size_t d = 0; d < 10; d++) {
-        //   printf("%f, ", embd_a_->buf[16 * s * H + (s-1) * H + d]);
-        // }
 
         /* Final Layer Normalization */
         layer_norm(embd_a, ln_f_g, ln_f_b);
@@ -473,27 +335,9 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         transpose(wte, wte_transposed_a); // OPTION: pad V
         matmul_ffn(embd_a, wte_transposed_a, logit_a);
 
-        // DEBUG : Print logit shape
-        // printf("\nLogit: (");
-        // for (size_t d = 0; d < logit_a->ndim; d++) {
-        //   printf("%zu, ", logit_a->shape[d]);
-        // }
-        // printf(")");
-
         /* Greedy sampling (only last timestep is considered) */
         int *next_token_ids = (int *)malloc(BATCH_SIZE * sizeof(int));
         top1_sampling(logit_a, next_token_ids);
-
-        /* CHEAT */
-        // if (t == 2) {
-        //   printf("%d\n", next_token_ids[0]);
-        //   next_token_ids[0] = 11;
-        // }
-        // if (t == 5) {
-        //   printf("%d\n", next_token_ids[0]);
-        //   next_token_ids[0] = 5586;
-        // }
-
 
         /* Update input prompt and prompt size */ 
         for (size_t p = 0; p < BATCH_SIZE; p++) {
@@ -509,19 +353,7 @@ void generate_tokens(int *input, int *output, size_t n_prompt, size_t n_token) {
         /* Finalize activations for next token generation */
         free_activations();
         free(next_token_ids);
-        // break;
       }
-    
-    // DEBUG
-    // printf("\nOutput pushed to Input\n");
-    // for (size_t i = tokens_per_prompt; i < input_prompt[16].size(); i++) {
-    //   printf("%d ", input_prompt[16][i]);
-    // }
-    // printf("\nSaved Output\n");
-    // for (size_t t = 0; t < n_token; t++) {
-    //   printf("%d ", output[(b_strt + 16) * n_token + t]);
-    // }
-    // break;
     }
   }
 }
