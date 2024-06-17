@@ -406,16 +406,17 @@ void matmul_attnout(Tensor *in1, Tensor *in2, Tensor *out) {
 // CUDA Kernel for matmul_ffn
 __global__ void matmul_ffn_kernel(float *in1, float *in2, float *out, size_t B, size_t M, size_t K, size_t N) {
     int b = blockIdx.x * blockDim.x + threadIdx.x;
-    int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.z * blockDim.z + threadIdx.z;
+    int j = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (b < B && i < M && j < N) {
+    if (b < B && j < N) {
+      for (size_t i = 0; i < M; i++) {
         float sum = 0.0;
         for (int k = 0; k < K; k++) {
             // out[b, i, j] = in1[b, i, k] * in2[k, j]
             sum += in1[b * M * K + i * K + k] * in2[k * N + j];
         }
         out[b * M * N + i * N + j] = sum;
+      }
     }
 }
 
@@ -431,8 +432,8 @@ void matmul_ffn(Tensor *in1, Tensor *in2, Tensor *out) {
   size_t N = in2->shape[1]; // V
 
   // Define grid and block dimensions
-  dim3 blockDim(2, 2, 64);
-  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(M, blockDim.y), DIV_CEIL(N, blockDim.z));
+  dim3 blockDim(2, 64);
+  dim3 gridDim(DIV_CEIL(B, blockDim.x), DIV_CEIL(N, blockDim.y));
 
   // Launch the kernel
   matmul_ffn_kernel<<<gridDim, blockDim>>>(in1->buf, in2->buf, out->buf, B, M, K, N);
