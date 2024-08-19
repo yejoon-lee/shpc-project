@@ -1,0 +1,2 @@
+- Final project for SNU SHPC 2024-1
+- Single GPU + batching
